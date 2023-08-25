@@ -1,10 +1,10 @@
 mod util;
 mod node_int;
-mod node_array;
-mod node_string;
+mod node_dynamic_array;
+mod node_dynamic_range;
 mod node_enum;
 mod node_option;
-mod node_serial_range;
+mod node_fixed_range;
 mod node_serial;
 mod node_rust_const;
 mod node_rust_obj;

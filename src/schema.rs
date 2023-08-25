@@ -16,7 +16,6 @@ use proc_macro2::{
 };
 use quote::{
     quote,
-    format_ident,
     ToTokens,
 };
 use crate::{
@@ -30,16 +29,16 @@ use crate::{
         NodeSameVariant,
     },
     util::{
-        new_s,
         ToIdent,
+        S,
     },
-    node_rust_obj::NodeRustObj,
-    node_serial::NodeSerial,
+    node_enum::NodeEnum,
 };
 
 pub struct Schema_ {
     next_id: usize,
-    objects: BTreeMap<String, Vec<Object>>,
+    pub(crate) objects: BTreeMap<String, Vec<Object>>,
+    pub(crate) enums: BTreeMap<String, Vec<S<NodeEnum>>>,
 }
 
 impl Schema_ {
@@ -50,37 +49,20 @@ impl Schema_ {
     }
 }
 
-struct Schema(Rc<RefCell<Schema_>>);
+pub struct Schema(Rc<RefCell<Schema_>>);
 
 impl Schema {
     pub fn new() -> Schema {
         return Schema(Rc::new(RefCell::new(Schema_ {
             next_id: 0,
             objects: BTreeMap::new(),
+            enums: BTreeMap::new(),
         })));
     }
 
     /// Define a new de/serializable object.
     pub fn object(&self, name: String) -> Object {
-        let mut self2 = self.0.borrow_mut();
-        let out = Object(Rc::new(RefCell::new(Object_ {
-            schema: Rc::downgrade(&self.0),
-            parent: None,
-            id: self2.take_id(),
-            serial_root: new_s(NodeSerial {
-                id: self2.take_id(),
-                children: vec![],
-            }),
-            rust_root: new_s(NodeRustObj {
-                id: self2.take_id(),
-                type_ident: format_ident!("{}", name),
-                fields: vec![],
-            }),
-            rust_const_roots: vec![],
-            updeps: vec![],
-        })));
-        self2.objects.entry(name).or_insert_with(Vec::new).push(out);
-        return out;
+        return Object::new(&self.0, name);
     }
 
     /// Generate code for the described schema.
@@ -89,163 +71,209 @@ impl Schema {
 
         // Generate types
         let mut code = vec![];
-        for (name, objs) in self2.objects {
-            let mut first: Option<Object> = None;
-            for obj in objs {
-                let obj2 = obj.0.borrow();
-                let obj_obj = obj2.rust_root.borrow();
+        for (name, enums) in self2.enums {
+            let mut first = enums.first().unwrap();
 
-                // Make sure all definitions are consistent
-                if let Some(first) = first {
-                    let first = first.0.borrow();
-                    let mut obj_fields = HashMap::new();
-                    for f in obj_obj.fields {
-                        let f = f.borrow();
-                        obj_fields.insert(f.field_ident.to_string(), f.value);
-                    }
-                    for f in first.rust_root.borrow().fields {
-                        let f = f.borrow();
-                        if let Some(obj_f_value) = obj_fields.remove(&f.field_ident.to_string()) {
-                            match NodeSameVariant::pairs(&*obj_f_value.0, &*f.value.0) {
-                                NodeSameVariant::Int(l, r) => {
-                                    let l = l.borrow();
-                                    let r = r.borrow();
-                                    if l.rust_type.to_string() != r.rust_type.to_string() {
-                                        panic!(
-                                            "Definitions of {} field {} have mismatched rust types {} and {}",
-                                            name,
-                                            f.field_ident,
-                                            l.rust_type,
-                                            r.rust_type
-                                        );
-                                    }
-                                },
-                                NodeSameVariant::String(_, _) => { },
-                                NodeSameVariant::Array(l, r) => {
-                                    let l_type = l.borrow().element.0.borrow().rust_root.borrow().type_ident;
-                                    let r_type = r.borrow().element.0.borrow().rust_root.borrow().type_ident;
-                                    if l_type != r_type {
-                                        panic!(
-                                            "Definitions of {} field {} have mismatched array element types {} and {}",
-                                            name,
-                                            f.field_ident,
-                                            l_type,
-                                            r_type
-                                        );
-                                    }
-                                },
-                                NodeSameVariant::Enum(l, r) => {
-                                    let l = l.borrow();
-                                    let r = r.borrow();
-                                    let l_type = l.type_ident;
-                                    let r_type = r.type_ident;
-                                    if l_type != r_type {
-                                        panic!(
-                                            "Definitions of {} field {} have mismatched enum inner types {} and {}",
-                                            name,
-                                            f.field_ident,
-                                            l_type,
-                                            r_type
-                                        );
-                                    }
-                                    let mut l_variants = HashMap::new();
-                                    for v in l.variants {
-                                        l_variants.insert(v.var_ident.to_string(), v.element);
-                                    }
-                                    for v in r.variants {
-                                        if let Some(l_v) = l_variants.remove(&v.var_ident.to_string()) {
-                                            let l_type = l_v.0.borrow().rust_root.borrow().type_ident;
-                                            let r_type = v.element.0.borrow().rust_root.borrow().type_ident;
-                                            if l_type != r_type {
-                                                panic!(
-                                                    "Definitions of {} enum field {} variant {} have mismatched inner types {} and {}",
-                                                    name,
-                                                    f.field_ident,
-                                                    v.var_ident,
-                                                    l_type,
-                                                    r_type
-                                                );
-                                            }
-                                        } else {
-                                            panic!(
-                                                "Definitions of {} enum field {} are missing variant {}",
-                                                name,
-                                                f.field_ident,
-                                                v.var_ident
-                                            );
-                                        }
-                                    }
-                                },
-                                NodeSameVariant::Option(l, r) => {
-                                    let l_type = l.borrow().element.0.borrow().rust_root.borrow().type_ident;
-                                    let r_type = r.borrow().element.0.borrow().rust_root.borrow().type_ident;
-                                    if l_type != r_type {
-                                        panic!(
-                                            "Definitions of {} field {} have mismatched option inner types {} and {}",
-                                            name,
-                                            f.field_ident,
-                                            l_type,
-                                            r_type
-                                        );
-                                    }
-                                },
-                                NodeSameVariant::Nonmatching(l, r) => {
-                                    panic!(
-                                        "Some definitions of {} have value type {}, others {}",
-                                        name,
-                                        l.typestr(),
-                                        r.typestr()
-                                    );
-                                },
-                                _ => unreachable!(),
-                            }
-                        } else {
-                            panic!("Some definitions of {} are missing field {}", name, f.field_ident);
+            // Make sure all definitions are consistent
+            for other in &enums[1..] {
+                let mut other_variants = HashMap::new();
+                for v in other.borrow().variants {
+                    other_variants.insert(v.var_name.to_string(), v.element.clone());
+                }
+                for first_v in first.borrow().variants {
+                    if let Some(other_v) = other_variants.remove(&first_v.var_name) {
+                        let first_type = first_v.element.0.borrow().rust_root.borrow().type_name;
+                        let other_type = other_v.0.borrow().rust_root.borrow().type_name;
+                        if first_type != other_type {
+                            panic!(
+                                "Definitions of enum {} variant {} have mismatched types {} and {}",
+                                name,
+                                first_v.var_name,
+                                first_type,
+                                other_type
+                            );
                         }
+                    } else {
+                        panic!("Some definitions of enum {} are missing variant {}", name, first_v.var_name);
                     }
-                    for f in obj_fields.keys() {
-                        panic!("Some definitions of {} are missing field {}", name, f);
-                    }
-                } else {
-                    first = Some(obj);
                 }
+                for v in other_variants.keys() {
+                    panic!("Some definitions of {} are missing variant {}", name, v);
+                }
+            }
 
-                // Generate code
-                let type_ident = obj_obj.type_ident;
-                let mut fields = vec![];
-                for f in &obj_obj.fields {
-                    let f = f.borrow();
-                    let field_ident = f.field_ident;
-                    let field_type = match &*f.value.0 {
-                        Node_::Int(n) => n.borrow().rust_type.to_token_stream(),
-                        Node_::String(_) => quote!(std:: vec:: Vec < u8 >),
-                        Node_::Array(n) => {
-                            let inner = n.borrow().element.0.borrow().rust_root.borrow().type_ident.clone();
-                            quote!(std:: vec:: Vec < #inner >)
-                        },
-                        Node_::Enum(n) => n.borrow().type_ident.into_token_stream(),
-                        Node_::Option(n) => {
-                            let inner = n.borrow().element.0.borrow().rust_root.borrow().type_ident.clone();
-                            quote!(Option < #inner >)
-                        },
-                        _ => unreachable!(),
-                    };
-                    fields.push(quote!{
-                        pub #field_ident: #field_type,
-                    });
-                }
-                code.push(quote!{
-                    pub struct #type_ident {
-                        #(#fields) *
-                    }
+            // Generate code
+            let enum2 = first.borrow();
+            let type_ident = enum2.type_name;
+            let mut variants = vec![];
+            for v in &enum2.variants {
+                let var_ident = v.var_name;
+                let var_type_ident = v.element.0.borrow().rust_root.borrow().type_name.clone();
+                variants.push(quote!{
+                    #var_ident(#var_type_ident),
                 });
             }
+            code.push(quote!{
+                pub enum #type_ident {
+                    #(#variants) *
+                }
+            });
+        }
+        for (name, objs) in self2.objects {
+            let mut first = objs.first().unwrap();
+
+            // Make sure all definitions are consistent
+            for other in &objs[1..] {
+                let other2 = other.0.borrow();
+                let other = other2.rust_root.borrow();
+                let first = first.0.borrow();
+                let mut other_fields = HashMap::new();
+                for f in other.fields {
+                    let f = f.borrow();
+                    other_fields.insert(f.field_name, f.value.redirect.unwrap_or(f.value.primary));
+                }
+                for first_f in first.rust_root.borrow().fields {
+                    let first_f = first_f.borrow();
+                    if let Some(other_f_value) = other_fields.remove(&first_f.field_name) {
+                        match NodeSameVariant::pairs(&*other_f_value.0, &*first_f.value.primary.0) {
+                            NodeSameVariant::Int(l, r) => {
+                                let l = l.borrow();
+                                let r = r.borrow();
+                                if l.rust_type.to_string() != r.rust_type.to_string() {
+                                    panic!(
+                                        "Definitions of {} field {} have mismatched rust types {} and {}",
+                                        name,
+                                        first_f.field_name,
+                                        l.rust_type,
+                                        r.rust_type
+                                    );
+                                }
+                            },
+                            NodeSameVariant::String(_, _) => { },
+                            NodeSameVariant::Array(l, r) => {
+                                let l_type = l.borrow().element.0.borrow().rust_root.borrow().type_name;
+                                let r_type = r.borrow().element.0.borrow().rust_root.borrow().type_name;
+                                if l_type != r_type {
+                                    panic!(
+                                        "Definitions of {} field {} have mismatched array element types {} and {}",
+                                        name,
+                                        first_f.field_name,
+                                        l_type,
+                                        r_type
+                                    );
+                                }
+                            },
+                            NodeSameVariant::Enum(l, r) => {
+                                let l = l.borrow();
+                                let r = r.borrow();
+                                let l_type = l.type_name;
+                                let r_type = r.type_name;
+                                if l_type != r_type {
+                                    panic!(
+                                        "Definitions of {} field {} have mismatched enum inner types {} and {}",
+                                        name,
+                                        first_f.field_name,
+                                        l_type,
+                                        r_type
+                                    );
+                                }
+                                let mut l_variants = HashMap::new();
+                                for v in l.variants {
+                                    l_variants.insert(v.var_name.to_string(), v.element);
+                                }
+                                for v in r.variants {
+                                    if let Some(l_v) = l_variants.remove(&v.var_name.to_string()) {
+                                        let l_type = l_v.0.borrow().rust_root.borrow().type_name;
+                                        let r_type = v.element.0.borrow().rust_root.borrow().type_name;
+                                        if l_type != r_type {
+                                            panic!(
+                                                "Definitions of {} enum field {} variant {} have mismatched inner types {} and {}",
+                                                name,
+                                                first_f.field_name,
+                                                v.var_name,
+                                                l_type,
+                                                r_type
+                                            );
+                                        }
+                                    } else {
+                                        panic!(
+                                            "Definitions of {} enum field {} are missing variant {}",
+                                            name,
+                                            first_f.field_name,
+                                            v.var_name
+                                        );
+                                    }
+                                }
+                            },
+                            NodeSameVariant::Option(l, r) => {
+                                let l_type = l.borrow().element.0.borrow().rust_root.borrow().type_name;
+                                let r_type = r.borrow().element.0.borrow().rust_root.borrow().type_name;
+                                if l_type != r_type {
+                                    panic!(
+                                        "Definitions of {} field {} have mismatched option inner types {} and {}",
+                                        name,
+                                        first_f.field_name,
+                                        l_type,
+                                        r_type
+                                    );
+                                }
+                            },
+                            NodeSameVariant::Nonmatching(l, r) => {
+                                panic!(
+                                    "Some definitions of {} have value type {}, others {}",
+                                    name,
+                                    l.typestr(),
+                                    r.typestr()
+                                );
+                            },
+                            _ => unreachable!(),
+                        }
+                    } else {
+                        panic!("Some definitions of {} are missing field {}", name, first_f.field_name);
+                    }
+                }
+                for f in other_fields.keys() {
+                    panic!("Some definitions of {} are missing field {}", name, f);
+                }
+            }
+            let obj2 = first.0.borrow();
+            let obj_obj = obj2.rust_root.borrow();
+
+            // Generate code
+            let type_ident = obj_obj.type_name;
+            let mut fields = vec![];
+            for f in &obj_obj.fields {
+                let f = f.borrow();
+                let field_ident = f.field_name;
+                let field_type = match &*f.value.primary.0 {
+                    Node_::Int(n) => n.borrow().rust_type.to_token_stream(),
+                    Node_::DynamicRange(_) => quote!(std:: vec:: Vec < u8 >),
+                    Node_::Array(n) => {
+                        let inner = n.borrow().element.0.borrow().rust_root.borrow().type_name.clone();
+                        quote!(std:: vec:: Vec < #inner >)
+                    },
+                    Node_::Enum(n) => n.borrow().type_name.into_token_stream(),
+                    Node_::Option(n) => {
+                        let inner = n.borrow().element.0.borrow().rust_root.borrow().type_name.clone();
+                        quote!(Option < #inner >)
+                    },
+                    _ => unreachable!(),
+                };
+                fields.push(quote!{
+                    pub #field_ident: #field_type,
+                });
+            }
+            code.push(quote!{
+                pub struct #type_ident {
+                    #(#fields) *
+                }
+            });
 
             // Generate de/serialization methods for any objs with self-contained
             // serialization. (TODO Should maybe check for exactly one serialization format?).
-            let root = first.unwrap();
+            let root = first;
             let root = root.0.borrow();
-            if root.updeps.is_empty() {
+            if root.external_deps.is_empty() {
                 let root_obj = root.rust_root.borrow();
                 let obj_ident = root_obj.id.ident();
                 let serial_ident = root.serial_root.borrow().id.ident();
@@ -267,7 +295,7 @@ impl Schema {
                         }
                     });
                 }
-                let type_ident = root_obj.type_ident;
+                let type_ident = root_obj.type_name;
                 code.push(quote!(impl #type_ident {
                     #(#methods) *
                 }));
@@ -299,7 +327,7 @@ fn generate_read(obj: &Object_) -> TokenStream {
         } else {
             match &*node.0 {
                 Node_::Serial(_) => { },
-                Node_::SerialRange(n) => {
+                Node_::FixedRange(n) => {
                     let n = n.borrow();
                     let serial_ident = n.serial.id().ident();
                     let ident = n.id.ident();
@@ -311,10 +339,10 @@ fn generate_read(obj: &Object_) -> TokenStream {
                 Node_::Int(n) => {
                     code.push(n.borrow().generate_read());
                 },
-                Node_::String(n) => {
+                Node_::DynamicRange(n) => {
                     let n = n.borrow();
                     let source_ident = n.serial.borrow().id.ident();
-                    let source_len_ident = n.serial_len.borrow().id.ident();
+                    let source_len_ident = n.serial_len.primary.borrow().id.ident();
                     let dest_ident = n.id.ident();
                     code.push(quote!{
                         let mut #dest_ident = #source_ident.read_len(#source_len_ident) ?;
@@ -323,7 +351,7 @@ fn generate_read(obj: &Object_) -> TokenStream {
                 Node_::Array(n) => {
                     let n = n.borrow();
                     let dest_ident = n.id.ident();
-                    let source_len_ident = n.serial_len.borrow().id.ident();
+                    let source_len_ident = n.serial_len.primary.borrow().id.ident();
                     let element = n.element.0.borrow();
                     let elem_ident = element.id.ident();
                     let elem_code = generate_read(&*element);
@@ -338,18 +366,18 @@ fn generate_read(obj: &Object_) -> TokenStream {
                 },
                 Node_::Enum(n) => {
                     let n = n.borrow();
-                    let type_ident = n.type_ident;
-                    let source_tag_ident = n.serial_tag.id().ident();
+                    let type_ident = n.type_name;
+                    let source_tag_ident = n.serial_tag.primary.id().ident();
                     let dest_ident = n.id.ident();
                     let mut var_code = vec![];
                     for v in n.variants {
-                        let tag = hex::encode(v.tag);
-                        let var_ident = v.var_ident;
+                        let tag = v.tag;
+                        let var_ident = v.var_name;
                         let elem = v.element.0.borrow();
                         let elem_ident = elem.id.ident();
                         let elem_code = generate_read(&*elem);
                         var_code.push(quote!{
-                            hex_literal:: hex !(#tag) => {
+                            #tag => {
                                 #elem_code #dest_ident = #type_ident:: #var_ident(#elem_ident);
                             },
                         });
@@ -365,7 +393,7 @@ fn generate_read(obj: &Object_) -> TokenStream {
                 },
                 Node_::Option(n) => {
                     let n = n.borrow();
-                    let source_switch_ident = n.serial_switch.id().ident();
+                    let source_switch_ident = n.serial_switch.primary.id().ident();
                     let element = n.element.0.borrow();
                     let elem_ident = element.id.ident();
                     let elem_code = generate_read(&element);
@@ -382,7 +410,7 @@ fn generate_read(obj: &Object_) -> TokenStream {
                 },
                 Node_::Const(n) => {
                     let n = n.borrow();
-                    let source_ident = n.value.id().ident();
+                    let source_ident = n.value.primary.id().ident();
                     let expect = n.expect;
                     code.push(quote!{
                         if #source_ident != #expect {
@@ -393,13 +421,13 @@ fn generate_read(obj: &Object_) -> TokenStream {
                 Node_::RustField(n) => { },
                 Node_::RustObj(n) => {
                     let n = n.borrow();
-                    let type_ident = n.type_ident;
+                    let type_ident = n.type_name;
                     let dest_ident = n.id.ident();
                     let mut fields = vec![];
                     for f in n.fields {
                         let f = f.borrow();
-                        let field_ident = f.field_ident;
-                        let value_ident = f.value.id().ident();
+                        let field_ident = f.field_name;
+                        let value_ident = f.value.primary.id().ident();
                         fields.push(quote!{
                             #field_ident: #value_ident,
                         });
@@ -432,7 +460,7 @@ fn generate_write(obj: &Object_) -> TokenStream {
 
             // Prep before visiting deps
             match &*node.0 {
-                Node_::SerialRange(n) => {
+                Node_::FixedRange(n) => {
                     let n = n.borrow();
                     let dest_ident = n.id.ident();
                     let len = n.len_bytes;
@@ -462,16 +490,16 @@ fn generate_write(obj: &Object_) -> TokenStream {
                         });
                     }
                 },
-                Node_::SerialRange(n) => { },
+                Node_::FixedRange(n) => { },
                 Node_::Int(n) => {
                     code.push(n.borrow().generate_write());
                 },
-                Node_::String(n) => {
+                Node_::DynamicRange(n) => {
                     let n = n.borrow();
-                    let source_ident = n.rust.expect("").id().ident();
+                    let source_ident = n.rust.expect("").primary.id().ident();
                     let dest_ident = n.id.ident();
-                    let dest_len_ident = n.serial_len.borrow().id.ident();
-                    let dest_len_type = n.serial_len.borrow().rust_type;
+                    let dest_len_ident = n.serial_len.primary.borrow().id.ident();
+                    let dest_len_type = n.serial_len.primary.borrow().rust_type;
                     code.push(quote!{
                         let #dest_len_ident = #source_ident.len() as #dest_len_type;
                         let #dest_ident = #source_ident.as_bytes();
@@ -480,9 +508,9 @@ fn generate_write(obj: &Object_) -> TokenStream {
                 Node_::Array(n) => {
                     let n = n.borrow();
                     let source_ident = n.id.ident();
-                    let dest_ident = n.rust.expect("").id().ident();
-                    let dest_len_ident = n.serial_len.borrow().id.ident();
-                    let dest_len_type = n.serial_len.borrow().rust_type;
+                    let dest_ident = n.rust.expect("").primary.id().ident();
+                    let dest_len_ident = n.serial_len.primary.borrow().id.ident();
+                    let dest_len_type = n.serial_len.primary.borrow().rust_type;
                     let element = n.element.0.borrow();
                     let elem_source_ident = element.rust_root.borrow().id.ident();
                     let elem_code = generate_write(&*element);
@@ -496,19 +524,32 @@ fn generate_write(obj: &Object_) -> TokenStream {
                 },
                 Node_::Enum(n) => {
                     let n = n.borrow();
-                    let enum_name = n.type_ident;
-                    let source_ident = n.rust.expect("").id().ident();
+                    let enum_name = n.type_name;
+                    let source_ident = n.rust.expect("").primary.id().ident();
                     let dest_ident = n.id.ident();
-                    let dest_tag_ident = n.serial_tag.id().ident();
+                    let dest_tag_ident = n.serial_tag.primary.id().ident();
                     let mut var_code = vec![];
+                    let mut all_external_deps = BTreeMap::new();
                     for v in n.variants {
-                        let tag = hex::encode(v.tag);
-                        let variant_name = v.var_ident;
+                        for external_dep in &v.element.0.borrow().external_deps {
+                            all_external_deps.entry(external_dep.id()).or_insert(external_dep.clone());
+                        }
+                    }
+                    let mut anchor_external_deps = vec![];
+                    for dep in all_external_deps.values() {
+                        let ident = dep.id().ident();
+                        anchor_external_deps.push(quote!{
+                            let #ident;
+                        });
+                    }
+                    for v in n.variants {
+                        let tag = v.tag;
+                        let variant_name = v.var_name;
                         let element = v.element.0.borrow();
                         let elem_source_ident = element.rust_root.borrow().id.ident();
                         let elem_dest_ident = element.serial_root.borrow().id.ident();
                         let elem_code;
-                        if !element.updeps.is_empty() {
+                        if element.external_deps.is_empty() {
                             elem_code = quote!{
                                 let mut #elem_dest_ident = vec ![];
                                 #elem_source_ident.write(& mut #elem_dest_ident);
@@ -516,10 +557,24 @@ fn generate_write(obj: &Object_) -> TokenStream {
                         } else {
                             elem_code = generate_write(&*element);
                         }
+
+                        // Fill in defaults for any external deps this variant didn't write to
+                        let mut missed_external_deps = all_external_deps.clone();
+                        for external_dep in &element.external_deps {
+                            missed_external_deps.remove(&external_dep.id());
+                        }
+                        let mut default_external_deps = vec![];
+                        for external_dep in missed_external_deps.values() {
+                            default_external_deps.push(external_dep.write_default());
+                        }
+
+                        // Assemble
                         var_code.push(quote!{
                             #enum_name:: #variant_name(#elem_source_ident) => {
-                                #dest_tag_ident = hex_literal:: hex !(#tag);
+                                #dest_tag_ident = #tag;
                                 #elem_code 
+                                //. .
+                                #(#default_external_deps) * 
                                 //. .
                                 #dest_ident.extend(#elem_dest_ident);
                             },
@@ -528,6 +583,9 @@ fn generate_write(obj: &Object_) -> TokenStream {
                     code.push(quote!{
                         let #dest_tag_ident;
                         let mut #dest_ident = vec ![];
+                        //. .
+                        #(#anchor_external_deps) * 
+                        //. .
                         match #source_ident {
                             #(#var_code) *
                         };
@@ -535,24 +593,36 @@ fn generate_write(obj: &Object_) -> TokenStream {
                 },
                 Node_::Option(n) => {
                     let n = n.borrow();
-                    let source_ident = n.rust.expect("Option unused").id().ident();
+                    let source_ident = n.rust.expect("Option unused").primary.id().ident();
                     let dest_ident = n.id.ident();
-                    let dest_switch_ident = n.serial_switch.id().ident();
+                    let dest_switch_ident = n.serial_switch.primary.id().ident();
                     let element = n.element.0.borrow();
                     let elem_source_ident = element.rust_root.borrow().id.ident();
                     let elem_dest_ident = element.serial_root.borrow().id.ident();
                     let elem_code;
-                    if !element.updeps.is_empty() {
+                    let mut default_external_deps = vec![];
+                    let mut anchor_external_deps = vec![];
+                    if element.external_deps.is_empty() {
                         elem_code = quote!{
                             let mut #elem_dest_ident = vec ![];
                             #elem_source_ident.write(& mut #elem_dest_ident);
                         };
                     } else {
                         elem_code = generate_write(&*element);
+                        for dep in n.lifted_serial_deps.values() {
+                            default_external_deps.push(dep.write_default());
+                            let ident = dep.id().ident();
+                            anchor_external_deps.push(quote!{
+                                let #ident;
+                            });
+                        }
                     }
                     code.push(quote!{
                         let #dest_switch_ident;
                         let mut #dest_ident = vec ![];
+                        //. .
+                        #(#anchor_external_deps) * 
+                        //. .
                         if let Some(#elem_source_ident) = #source_ident {
                             #dest_switch_ident = true;
                             #elem_code 
@@ -561,6 +631,7 @@ fn generate_write(obj: &Object_) -> TokenStream {
                         }
                         else {
                             #dest_switch_ident = false;
+                            #(#default_external_deps) *
                         };
                     });
                 },
@@ -575,7 +646,7 @@ fn generate_write(obj: &Object_) -> TokenStream {
                 Node_::RustField(n) => {
                     let n = n.borrow();
                     let dest_ident = n.id.ident();
-                    let field_ident = n.field_ident;
+                    let field_ident = n.field_name;
                     let obj_ident = n.obj.borrow().id.ident();
                     code.push(quote!{
                         let #dest_ident = #obj_ident.#field_ident;

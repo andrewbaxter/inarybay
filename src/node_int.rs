@@ -7,8 +7,9 @@ use crate::{
         S,
         ToIdent,
         Coord,
+        RedirectRef,
     },
-    node_serial_range::NodeSerialRange,
+    node_fixed_range::NodeSerialFixedRange,
     node::Node,
     object::WeakObj,
 };
@@ -26,7 +27,7 @@ pub(crate) enum Endian {
 pub(crate) struct NodeIntArgs {
     pub(crate) scope: WeakObj,
     pub(crate) id: String,
-    pub(crate) serial: S<NodeSerialRange>,
+    pub(crate) serial: RedirectRef<S<NodeSerialFixedRange>, Node>,
     pub(crate) start: Coord,
     pub(crate) len: Coord,
     pub(crate) signed: bool,
@@ -36,12 +37,12 @@ pub(crate) struct NodeIntArgs {
 pub(crate) struct NodeInt {
     pub(crate) scope: WeakObj,
     pub(crate) id: String,
-    pub(crate) serial: S<NodeSerialRange>,
+    pub(crate) serial: RedirectRef<S<NodeSerialFixedRange>, Node>,
     pub(crate) start: Coord,
     pub(crate) len: Coord,
     pub(crate) signed: bool,
     pub(crate) endian: Endian,
-    pub(crate) rust: Option<Node>,
+    pub(crate) rust: Option<RedirectRef<Node, Node>>,
     // Computed
     pub(crate) rust_bits: usize,
     pub(crate) rust_type: Ident,
@@ -78,7 +79,7 @@ impl NodeInt {
 
     pub(crate) fn generate_read(&self) -> TokenStream {
         let dest_ident = self.id.ident();
-        let source_ident = self.serial.borrow().id.ident();
+        let source_ident = self.serial.primary.borrow().id.ident();
         if self.len.bits <= 8 {
             if self.start.bits + self.len.bits > 8 {
                 panic!();
@@ -146,8 +147,8 @@ impl NodeInt {
     }
 
     pub(crate) fn generate_write(&self) -> TokenStream {
-        let source_ident = self.rust.expect("").id().ident();
-        let dest_ident = self.serial.borrow().id.ident();
+        let source_ident = self.rust.expect("").primary.id().ident();
+        let dest_ident = self.serial.primary.borrow().id.ident();
         if self.len.bits <= 8 {
             if self.start.bits + self.len.bits > 8 {
                 panic!();
@@ -195,5 +196,11 @@ impl NodeInt {
                 #dest_ident[#serial_start..#serial_start + #serial_bytes].copy_from_slice(& #out);
             };
         }
+    }
+    pub(crate) fn read_deps(&self) -> Vec<Node> {
+    }
+    pub(crate) fn write_deps(&self) -> Vec<Node> {
+    }
+    pub(crate) fn write_default(&self) -> TokenStream {
     }
 }

@@ -14,6 +14,26 @@ use quote::{
     format_ident,
 };
 
+pub(crate) struct RedirectRef<T, U> {
+    // Original ref
+    pub(crate) primary: T,
+    // Replacement for dep resolution
+    pub(crate) redirect: Option<U>,
+}
+
+impl<T, U> RedirectRef<T, U> {
+    fn new(v: T) -> Self {
+        Self {
+            primary: v,
+            redirect: None,
+        }
+    }
+
+    fn redirect(&mut self, v: U) {
+        self.redirect = Some(v);
+    }
+}
+
 pub(crate) trait ToIdent {
     fn ident(&self) -> Ident;
 }
@@ -115,4 +135,18 @@ impl PartialOrd for Coord {
             None => return None,
         }
     }
+}
+
+#[macro_export]
+macro_rules! breaker{
+    ($b: block) => {
+        loop {
+            $b break;
+        }
+    };
+    ($l: lifetime $b: block) => {
+        $l loop {
+            $b break;
+        }
+    };
 }

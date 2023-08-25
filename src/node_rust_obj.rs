@@ -1,18 +1,36 @@
-use proc_macro2::Ident;
 use crate::{
     node::Node,
-    util::S,
+    util::{
+        S,
+        RedirectRef,
+    },
 };
 
 pub(crate) struct NodeRustField {
     pub(crate) id: String,
-    pub(crate) field_ident: Ident,
-    pub(crate) value: Node,
+    pub(crate) field_name: String,
+    pub(crate) value: RedirectRef<Node, Node>,
     pub(crate) obj: S<NodeRustObj>,
+}
+
+impl NodeRustField {
+    pub(crate) fn read_deps(&self) -> Vec<Node> { }
+
+    pub(crate) fn write_deps(&self) -> Vec<Node> { }
+
+    pub(crate) fn write_default(&self) -> TokenStream { }
 }
 
 pub(crate) struct NodeRustObj {
     pub(crate) id: String,
-    pub(crate) type_ident: Ident,
+    pub(crate) type_name: String,
     pub(crate) fields: Vec<S<NodeRustField>>,
+}
+
+impl NodeRustObj {
+    pub(crate) fn read_deps(&self) -> Vec<Node> { }
+
+    pub(crate) fn write_deps(&self) -> Vec<Node> { }
+
+    pub(crate) fn write_default(&self) -> TokenStream { }
 }
