@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use proc_macro2::TokenStream;
 use quote::quote;
 use crate::{
@@ -16,6 +17,7 @@ use crate::{
 pub(crate) struct NodeSerial {
     pub(crate) id: String,
     pub(crate) children: Vec<S<NodeSerialSegment>>,
+    pub(crate) lifted_serial_deps: BTreeMap<String, Node>,
 }
 
 pub(crate) struct NodeSerialSegment {
@@ -36,7 +38,10 @@ impl NodeMethods for NodeSerial {
     }
 
     fn write_deps(&self) -> Vec<Node> {
-        return self.children.iter().map(|x| Node::from(*x)).collect();
+        let mut out = vec![];
+        out.extend(self.children.dep());
+        out.extend(self.lifted_serial_deps.values().cloned());
+        return out;
     }
 
     fn generate_write(&self) -> TokenStream {

@@ -6,7 +6,7 @@ use crate::{
     util::{
         S,
         ToIdent,
-        Coord,
+        BVec,
     },
     node_fixed_bytes::NodeFixedBytes,
     node::{
@@ -32,8 +32,8 @@ pub(crate) struct NodeIntArgs {
     pub(crate) scope: WeakObj,
     pub(crate) id: String,
     pub(crate) serial: RedirectRef<S<NodeFixedBytes>, Node>,
-    pub(crate) start: Coord,
-    pub(crate) len: Coord,
+    pub(crate) start: BVec,
+    pub(crate) len: BVec,
     pub(crate) signed: bool,
     pub(crate) endian: Endian,
 }
@@ -42,8 +42,8 @@ pub(crate) struct NodeInt {
     pub(crate) scope: WeakObj,
     pub(crate) id: String,
     pub(crate) serial: RedirectRef<S<NodeFixedBytes>, Node>,
-    pub(crate) start: Coord,
-    pub(crate) len: Coord,
+    pub(crate) start: BVec,
+    pub(crate) len: BVec,
     pub(crate) signed: bool,
     pub(crate) endian: Endian,
     pub(crate) rust: Option<Node>,

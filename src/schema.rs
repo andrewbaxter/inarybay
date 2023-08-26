@@ -257,7 +257,7 @@ impl Schema {
             // serialization. (TODO Should maybe check for exactly one serialization format?).
             let root = first;
             let root = root.0.borrow();
-            if root.external_deps.is_empty() {
+            if root.has_external_deps {
                 let root_obj = root.rust_root.borrow();
                 let obj_ident = root_obj.id.ident();
                 let serial_ident = root.serial_root.borrow().id.ident();

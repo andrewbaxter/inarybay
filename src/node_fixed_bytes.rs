@@ -4,7 +4,6 @@ use crate::{
     node::{
         Node,
         NodeMethods,
-        RedirectRef,
         ToDep,
     },
     util::{
@@ -23,7 +22,7 @@ pub(crate) struct NodeFixedBytes {
     pub(crate) serial: S<NodeSerialSegment>,
     pub(crate) len_bytes: usize,
     pub(crate) sub_ranges: Vec<S<NodeFixedBytes>>,
-    pub(crate) rust: Option<RedirectRef<Node, Node>>,
+    pub(crate) rust: Option<Node>,
 }
 
 impl NodeMethods for NodeFixedBytes {

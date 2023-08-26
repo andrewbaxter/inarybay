@@ -30,55 +30,55 @@ pub(crate) fn new_s<T>(t: T) -> S<T> {
     return Box::leak(Box::new(RefCell::new(t)));
 }
 
-#[derive(PartialEq)]
-pub(crate) struct Coord {
+#[derive(PartialEq, Clone, Copy)]
+pub(crate) struct BVec {
     pub(crate) bytes: usize,
     /// Excess of bytes
     pub(crate) bits: usize,
 }
 
-impl Coord {
-    pub(crate) fn zero() -> Coord {
-        return Coord {
+impl BVec {
+    pub(crate) fn zero() -> BVec {
+        return BVec {
             bytes: 0,
             bits: 0,
         };
     }
 
-    pub(crate) fn bytes(l: usize) -> Coord {
-        return Coord {
+    pub(crate) fn bytes(l: usize) -> BVec {
+        return BVec {
             bytes: l,
             bits: 0,
         };
     }
 }
 
-impl Display for Coord {
+impl Display for BVec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         return format_args!("{}B {}b", self.bytes, self.bits).fmt(f);
     }
 }
 
-impl Add for Coord {
-    type Output = Coord;
+impl Add for BVec {
+    type Output = BVec;
 
     fn add(self, rhs: Self) -> Self::Output {
         let bit_sum = self.bits + rhs.bits;
-        return Coord {
+        return BVec {
             bytes: self.bytes + rhs.bytes + bit_sum / 8,
             bits: bit_sum % 8,
         };
     }
 }
 
-impl AddAssign for Coord {
+impl AddAssign for BVec {
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs;
     }
 }
 
-impl Sub for Coord {
-    type Output = Coord;
+impl Sub for BVec {
+    type Output = BVec;
 
     fn sub(self, rhs: Self) -> Self::Output {
         let mut avail_bits = self.bits;
@@ -93,20 +93,20 @@ impl Sub for Coord {
             avail_bits = 8 - bits;
         }
         avail_bytes -= rhs.bytes;
-        return Coord {
+        return BVec {
             bytes: avail_bytes,
             bits: avail_bits,
         };
     }
 }
 
-impl SubAssign for Coord {
+impl SubAssign for BVec {
     fn sub_assign(&mut self, rhs: Self) {
         *self = *self - rhs;
     }
 }
 
-impl PartialOrd for Coord {
+impl PartialOrd for BVec {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match self.bytes.partial_cmp(&other.bytes) {
             Some(std::cmp::Ordering::Less) => return Some(std::cmp::Ordering::Less),

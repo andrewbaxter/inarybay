@@ -40,7 +40,7 @@ pub(crate) struct NodeEnum {
     pub(crate) serial: S<NodeSerialSegment>,
     pub(crate) variants: Vec<EnumVariant>,
     pub(crate) rust: Option<RedirectRef<Node, Node>>,
-    pub(crate) lifted_serial_deps: BTreeMap<String, Node>,
+    pub(crate) external_deps: BTreeMap<String, Node>,
 }
 
 impl NodeMethods for NodeEnum {
@@ -64,7 +64,7 @@ impl NodeMethods for NodeEnum {
             let elem = v.element.0.borrow();
             let elem_ident = elem.id.ident();
             let elem_code;
-            if self.lifted_serial_deps.is_empty() {
+            if self.external_deps.is_empty() {
                 let elem_type_ident = elem.rust_root.borrow().type_name.ident();
                 elem_code = quote!{
                     let #elem_ident = #elem_type_ident:: read(#source_ident);
@@ -102,14 +102,11 @@ impl NodeMethods for NodeEnum {
         let dest_tag_ident = self.serial_tag.primary.id().ident();
         let dest_ident = self.serial.borrow().id.ident();
         let mut var_code = vec![];
-        let mut all_external_deps = BTreeMap::new();
-        for v in self.variants {
-            for external_dep in &v.element.0.borrow().external_deps {
-                all_external_deps.entry(external_dep.id()).or_insert(external_dep.clone());
-            }
-        }
         let mut anchor_external_deps = vec![];
-        for dep in all_external_deps.values() {
+        for dep in self.external_deps.values() {
+            if dep.id() == self.scope.upgrade().unwrap().borrow().serial_root.borrow().id {
+                continue;
+            }
             let ident = dep.id().ident();
             anchor_external_deps.push(quote!{
                 let #ident;
@@ -122,7 +119,7 @@ impl NodeMethods for NodeEnum {
             let elem_source_ident = element.rust_root.borrow().id.ident();
             let elem_dest_ident = element.serial_root.borrow().id.ident();
             let elem_code;
-            if element.external_deps.is_empty() {
+            if self.external_deps.is_empty() {
                 elem_code = quote!{
                     let mut #elem_dest_ident = vec ![];
                     #elem_source_ident.write(& mut #elem_dest_ident);

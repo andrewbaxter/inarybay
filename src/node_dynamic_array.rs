@@ -23,7 +23,7 @@ pub(crate) struct NodeDynamicArray {
     pub(crate) scope: WeakObj,
     pub(crate) id: String,
     pub(crate) serial_before: Option<Node>,
-    pub(crate) serial_len: S<NodeInt>,
+    pub(crate) serial_len: RedirectRef<S<NodeInt>, Node>,
     pub(crate) serial: S<NodeSerialSegment>,
     pub(crate) element: Object,
     pub(crate) rust: Option<RedirectRef<Node, Node>>,
@@ -40,7 +40,7 @@ impl NodeMethods for NodeDynamicArray {
 
     fn generate_read(&self) -> TokenStream {
         let dest_ident = self.id.ident();
-        let source_len_ident = self.serial_len.borrow().id.ident();
+        let source_len_ident = self.serial_len.primary.borrow().id.ident();
         let source_ident = self.serial.borrow().serial_root.borrow().id.ident();
         let element = self.element.0.borrow();
         let elem_type_ident = element.rust_root.borrow().type_name.ident();
@@ -58,8 +58,8 @@ impl NodeMethods for NodeDynamicArray {
 
     fn generate_write(&self) -> TokenStream {
         let source_ident = self.id.ident();
-        let dest_len_ident = self.serial_len.borrow().id.ident();
-        let dest_len_type = self.serial_len.borrow().rust_type;
+        let dest_len_ident = self.serial_len.primary.borrow().id.ident();
+        let dest_len_type = self.serial_len.primary.borrow().rust_type;
         let dest_ident = self.serial.borrow().id.ident();
         let element = self.element.0.borrow();
         return quote!{

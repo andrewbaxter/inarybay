@@ -1,3 +1,7 @@
+use std::{
+    cell::RefCell,
+    rc::Rc,
+};
 use enum_dispatch::enum_dispatch;
 use proc_macro2::TokenStream;
 use crate::{
@@ -144,20 +148,20 @@ impl From<S<NodeRustObj>> for Node {
 }
 
 impl Node {
-    pub(crate) fn set_rust(&self, supplier: impl FnOnce() -> Node) { }
+    pub(crate) fn set_rust(&self, rust: Node) { }
 
-    pub(crate) fn scope_ptr(&self) -> *const Object_ {
+    pub(crate) fn scope(&self) -> Rc<RefCell<Object_>> {
         match &*self.0 {
             Node_::Serial(i) => unreachable!(),
-            Node_::FixedBytes(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
-            Node_::Int(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
-            Node_::DynamicBytes(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
-            Node_::Array(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
-            Node_::Enum(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
+            Node_::FixedBytes(i) => i.borrow().scope,
+            Node_::Int(i) => i.borrow().scope,
+            Node_::DynamicBytes(i) => i.borrow().scope,
+            Node_::Array(i) => i.borrow().scope,
+            Node_::Enum(i) => i.borrow().scope,
             Node_::Const(i) => unreachable!(),
             Node_::RustField(i) => unreachable!(),
             Node_::RustObj(i) => unreachable!(),
-        }
+        }.upgrade().unwrap()
     }
 
     pub(crate) fn id(&self) -> String {
