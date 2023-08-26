@@ -277,7 +277,7 @@ impl Object {
         let schema = schema.as_ref().borrow_mut();
         let const_ = new_s(NodeRustConst {
             id: schema.take_id(),
-            value: RedirectRef {
+            serial: RedirectRef {
                 primary: serial,
                 redirect: external,
             },
@@ -299,7 +299,7 @@ impl Object {
         let field = new_s(NodeRustField {
             id: schema.take_id(),
             field_name: name,
-            value: serial,
+            serial,
             value_external: external.is_some(),
             obj: self2.rust_root,
         });

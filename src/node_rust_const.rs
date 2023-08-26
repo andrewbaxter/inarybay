@@ -6,7 +6,7 @@ use crate::{
 
 pub(crate) struct NodeRustConst {
     pub(crate) id: String,
-    pub(crate) value: RedirectRef<Node, Node>,
+    pub(crate) serial: RedirectRef<Node, Node>,
     pub(crate) expect: TokenStream,
 }
 

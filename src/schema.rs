@@ -130,12 +130,12 @@ impl Schema {
                 let mut other_fields = HashMap::new();
                 for f in other.fields {
                     let f = f.borrow();
-                    other_fields.insert(f.field_name, f.value.redirect.unwrap_or(f.value.primary));
+                    other_fields.insert(f.field_name, f.serial.redirect.unwrap_or(f.serial.primary));
                 }
                 for first_f in first.rust_root.borrow().fields {
                     let first_f = first_f.borrow();
                     if let Some(other_f_value) = other_fields.remove(&first_f.field_name) {
-                        match NodeSameVariant::pairs(&*other_f_value.0, &*first_f.value.primary.0) {
+                        match NodeSameVariant::pairs(&*other_f_value.0, &*first_f.serial.primary.0) {
                             NodeSameVariant::Int(l, r) => {
                                 let l = l.borrow();
                                 let r = r.borrow();
@@ -245,7 +245,7 @@ impl Schema {
             for f in &obj_obj.fields {
                 let f = f.borrow();
                 let field_ident = f.field_name;
-                let field_type = match &*f.value.primary.0 {
+                let field_type = match &*f.serial.primary.0 {
                     Node_::Int(n) => n.borrow().rust_type.to_token_stream(),
                     Node_::DynamicRange(_) => quote!(std:: vec:: Vec < u8 >),
                     Node_::Array(n) => {
@@ -410,7 +410,7 @@ fn generate_read(obj: &Object_) -> TokenStream {
                 },
                 Node_::Const(n) => {
                     let n = n.borrow();
-                    let source_ident = n.value.primary.id().ident();
+                    let source_ident = n.serial.primary.id().ident();
                     let expect = n.expect;
                     code.push(quote!{
                         if #source_ident != #expect {
@@ -427,7 +427,7 @@ fn generate_read(obj: &Object_) -> TokenStream {
                     for f in n.fields {
                         let f = f.borrow();
                         let field_ident = f.field_name;
-                        let value_ident = f.value.primary.id().ident();
+                        let value_ident = f.serial.primary.id().ident();
                         fields.push(quote!{
                             #field_ident: #value_ident,
                         });
@@ -445,7 +445,7 @@ fn generate_read(obj: &Object_) -> TokenStream {
 }
 
 fn generate_write(obj: &Object_) -> TokenStream {
-    // Aside from int, read from rust-side ref ident, write to own id ident
+    // Aside from int, read from own id ident, write to serial-side id idents
     let mut seen = HashSet::new();
     let mut stack: Vec<(Node, bool)> = vec![];
     stack.push((obj.serial_root.into(), false));
@@ -637,22 +637,25 @@ fn generate_write(obj: &Object_) -> TokenStream {
                 },
                 Node_::Const(n) => {
                     let n = n.borrow();
-                    let dest_ident = n.id.ident();
+                    let dest_ident = n.serial.primary.id().ident();
                     let expect = n.expect;
                     code.push(quote!{
                         let #dest_ident = #expect;
                     });
                 },
-                Node_::RustField(n) => {
+                Node_::RustField(n) => { },
+                Node_::RustObj(n) => {
                     let n = n.borrow();
-                    let dest_ident = n.id.ident();
-                    let field_ident = n.field_name;
-                    let obj_ident = n.obj.borrow().id.ident();
-                    code.push(quote!{
-                        let #dest_ident = #obj_ident.#field_ident;
-                    });
+                    let obj_ident = n.id.ident();
+                    for f in n.fields {
+                        let f = f.borrow();
+                        let dest_ident = f.serial.primary.id().ident();
+                        let field_ident = f.field_name;
+                        code.push(quote!{
+                            let #dest_ident = #obj_ident.#field_ident;
+                        });
+                    }
                 },
-                Node_::RustObj(n) => { },
             };
         }
     }

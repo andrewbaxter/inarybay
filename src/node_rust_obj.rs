@@ -9,7 +9,7 @@ use crate::{
 pub(crate) struct NodeRustField {
     pub(crate) id: String,
     pub(crate) field_name: String,
-    pub(crate) value: RedirectRef<Node, Node>,
+    pub(crate) serial: RedirectRef<Node, Node>,
     pub(crate) obj: S<NodeRustObj>,
 }
 
