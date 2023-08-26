@@ -7,10 +7,14 @@ use crate::{
         S,
         ToIdent,
         Coord,
-        RedirectRef,
     },
-    node_fixed_range::NodeSerialFixedRange,
-    node::Node,
+    node_fixed_bytes::NodeFixedBytes,
+    node::{
+        Node,
+        RedirectRef,
+        NodeMethods,
+        ToDep,
+    },
     object::WeakObj,
 };
 use quote::{
@@ -27,7 +31,7 @@ pub(crate) enum Endian {
 pub(crate) struct NodeIntArgs {
     pub(crate) scope: WeakObj,
     pub(crate) id: String,
-    pub(crate) serial: RedirectRef<S<NodeSerialFixedRange>, Node>,
+    pub(crate) serial: RedirectRef<S<NodeFixedBytes>, Node>,
     pub(crate) start: Coord,
     pub(crate) len: Coord,
     pub(crate) signed: bool,
@@ -37,47 +41,23 @@ pub(crate) struct NodeIntArgs {
 pub(crate) struct NodeInt {
     pub(crate) scope: WeakObj,
     pub(crate) id: String,
-    pub(crate) serial: RedirectRef<S<NodeSerialFixedRange>, Node>,
+    pub(crate) serial: RedirectRef<S<NodeFixedBytes>, Node>,
     pub(crate) start: Coord,
     pub(crate) len: Coord,
     pub(crate) signed: bool,
     pub(crate) endian: Endian,
-    pub(crate) rust: Option<RedirectRef<Node, Node>>,
+    pub(crate) rust: Option<Node>,
     // Computed
     pub(crate) rust_bits: usize,
     pub(crate) rust_type: Ident,
 }
 
-impl NodeInt {
-    pub(crate) fn new(args: NodeIntArgs) -> NodeInt {
-        let mut rust_bits = args.len.bits.next_power_of_two();
-        if rust_bits < 8 {
-            rust_bits = 8;
-        }
-        if rust_bits > 64 {
-            panic!("Rust doesn't support ints with >64b width");
-        }
-        let sign_prefix;
-        if args.signed {
-            sign_prefix = "i";
-        } else {
-            sign_prefix = "u";
-        }
-        return NodeInt {
-            scope: args.scope,
-            id: args.id,
-            serial: args.serial,
-            start: args.start,
-            len: args.len,
-            signed: args.signed,
-            endian: args.endian,
-            rust: None,
-            rust_type: format_ident!("{}{}", sign_prefix, rust_bits),
-            rust_bits: rust_bits,
-        };
+impl NodeMethods for NodeInt {
+    fn read_deps(&self) -> Vec<Node> {
+        return self.serial.dep();
     }
 
-    pub(crate) fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self) -> TokenStream {
         let dest_ident = self.id.ident();
         let source_ident = self.serial.primary.borrow().id.ident();
         if self.len.bits <= 8 {
@@ -146,8 +126,12 @@ impl NodeInt {
         }
     }
 
-    pub(crate) fn generate_write(&self) -> TokenStream {
-        let source_ident = self.rust.expect("").primary.id().ident();
+    fn write_deps(&self) -> Vec<Node> {
+        return self.rust.dep();
+    }
+
+    fn generate_write(&self) -> TokenStream {
+        let source_ident = self.id.ident();
         let dest_ident = self.serial.primary.borrow().id.ident();
         if self.len.bits <= 8 {
             if self.start.bits + self.len.bits > 8 {
@@ -197,10 +181,34 @@ impl NodeInt {
             };
         }
     }
-    pub(crate) fn read_deps(&self) -> Vec<Node> {
-    }
-    pub(crate) fn write_deps(&self) -> Vec<Node> {
-    }
-    pub(crate) fn write_default(&self) -> TokenStream {
+}
+
+impl NodeInt {
+    pub(crate) fn new(args: NodeIntArgs) -> NodeInt {
+        let mut rust_bits = args.len.bits.next_power_of_two();
+        if rust_bits < 8 {
+            rust_bits = 8;
+        }
+        if rust_bits > 64 {
+            panic!("Rust doesn't support ints with >64b width");
+        }
+        let sign_prefix;
+        if args.signed {
+            sign_prefix = "i";
+        } else {
+            sign_prefix = "u";
+        }
+        return NodeInt {
+            scope: args.scope,
+            id: args.id,
+            serial: args.serial,
+            start: args.start,
+            len: args.len,
+            signed: args.signed,
+            endian: args.endian,
+            rust: None,
+            rust_type: format_ident!("{}{}", sign_prefix, rust_bits),
+            rust_bits: rust_bits,
+        };
     }
 }

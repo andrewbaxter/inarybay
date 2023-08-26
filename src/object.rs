@@ -14,39 +14,40 @@ use crate::{
         new_s,
         Coord,
         ToIdent,
-        RedirectRef,
     },
-    node_serial::NodeSerial,
-    node_rust_obj::{
+    node_serial::{
+        NodeSerial,
+        NodeSerialSegment,
+    },
+    node_rust::{
         NodeRustObj,
         NodeRustField,
     },
-    node_rust_const::NodeRustConst,
+    node_const::NodeConst,
     schema::{
         Schema_,
     },
     node::{
         Node,
+        RedirectRef,
     },
-    node_fixed_range::NodeSerialFixedRange,
+    node_fixed_bytes::NodeFixedBytes,
     node_int::{
         NodeInt,
         NodeIntArgs,
         Endian,
     },
-    node_dynamic_range::NodeDynamicRange,
+    node_dynamic_bytes::NodeDynamicBytes,
     node_dynamic_array::NodeDynamicArray,
     node_enum::{
         NodeEnum,
         EnumVariant,
     },
-    node_option::NodeOption,
 };
 
 pub(crate) enum NestingParent {
     None,
     Enum(S<NodeEnum>, Object),
-    Option(S<NodeOption>, Object),
 }
 
 pub(crate) struct Object_ {
@@ -55,7 +56,7 @@ pub(crate) struct Object_ {
     pub(crate) id: String,
     pub(crate) serial_root: S<NodeSerial>,
     pub(crate) rust_root: S<NodeRustObj>,
-    pub(crate) rust_const_roots: Vec<S<NodeRustConst>>,
+    pub(crate) rust_const_roots: Vec<S<NodeConst>>,
     pub(crate) external_deps: Vec<Node>,
 }
 
@@ -65,7 +66,7 @@ pub(crate) struct Object(pub(crate) Rc<RefCell<Object_>>);
 pub(crate) type WeakObj = Weak<RefCell<Object_>>;
 
 struct Range_ {
-    serial: S<NodeSerialFixedRange>,
+    serial: S<NodeFixedBytes>,
     /// Relative to serial
     start: Coord,
     avail: Coord,
@@ -103,21 +104,38 @@ impl Object {
         return out;
     }
 
-    pub fn fixed_range(&self, bytes: usize) -> Range {
+    fn seg(&self) -> S<NodeSerialSegment> {
         let self2 = self.0.as_ref().borrow_mut();
         let schema = self2.schema.upgrade().unwrap();
         let schema = schema.as_ref().borrow_mut();
         let root = self2.serial_root.borrow_mut();
-        let range = new_s(NodeSerialFixedRange {
+        let out = new_s(NodeSerialSegment {
             scope: Rc::downgrade(&self.0),
             id: schema.take_id(),
-            serial_before: root.children.last().copied(),
-            serial: self2.serial_root.into(),
+            serial_root: self2.serial_root.into(),
+            serial_before: root.children.last().cloned(),
+            rust: None,
+        });
+        root.children.push(out);
+        return out;
+    }
+
+    pub fn fixed_bytes(&self, bytes: usize) -> Range {
+        let serial = self.seg();
+        let self2 = self.0.as_ref().borrow_mut();
+        let schema = self2.schema.upgrade().unwrap();
+        let schema = schema.as_ref().borrow_mut();
+        let root = self2.serial_root.borrow_mut();
+        let range = new_s(NodeFixedBytes {
+            scope: Rc::downgrade(&self.0),
+            id: schema.take_id(),
+            serial_before: root.children.last().map(|x| Node::from(*x)),
+            serial: serial,
             len_bytes: bytes,
             sub_ranges: vec![],
             rust: None,
         });
-        root.children.push(range.into());
+        serial.borrow_mut().rust = Some(range.into());
         return Range(Rc::new(RefCell::new(Range_ {
             serial: range,
             start: Coord::zero(),
@@ -125,12 +143,21 @@ impl Object {
         })));
     }
 
-    pub fn dynamic_range(&self, len: S<NodeInt>) -> S<NodeDynamicRange> {
+    pub fn dynamic_bytes(&self, len: S<NodeInt>) -> S<NodeDynamicBytes> {
         let self2 = self.0.as_ref().borrow_mut();
+        let serial = self.seg();
+        let len = if len.borrow().scope.upgrade().unwrap().as_ptr() == self.0.as_ptr() {
+            RedirectRef::new(len)
+        } else {
+            RedirectRef {
+                primary: len,
+                redirect: Some(self2.serial_root.into()),
+            }
+        };
         let schema = self2.schema.upgrade().unwrap();
         let schema = schema.as_ref().borrow_mut();
         let root = self2.serial_root.borrow_mut();
-        let n = new_s(NodeDynamicRange {
+        let n = new_s(NodeDynamicBytes {
             scope: Rc::downgrade(&self.0),
             id: schema.take_id(),
             serial_before: root.children.last().copied(),
@@ -166,6 +193,7 @@ impl Object {
     }
 
     pub fn dynamic_array(&self, len: S<NodeInt>, obj_name: impl Display) -> (S<NodeDynamicArray>, Object) {
+        let serial = self.seg();
         let obj_name = obj_name.to_string();
         let external = self.lift_single_nesting(len.into());
         let self2 = self.0.as_ref().borrow_mut();
@@ -186,6 +214,7 @@ impl Object {
     }
 
     pub fn enum_(&self, tag: Node, enum_name: impl Display) -> (S<NodeEnum>, Enum) {
+        let serial = self.seg();
         let enum_name = enum_name.to_string();
         let external = self.lift_single_nesting(tag);
         let self2 = self.0.as_ref().borrow_mut();
@@ -208,26 +237,6 @@ impl Object {
             obj: self.clone(),
             enum_: node,
         });
-    }
-
-    pub fn option(&self, switch: Node, obj_name: impl Display) -> (S<NodeOption>, Object) {
-        let external = self.lift_single_nesting(switch.into());
-        let self2 = self.0.as_ref().borrow_mut();
-        let schema = self2.schema.upgrade().unwrap();
-        let schema2 = schema.as_ref().borrow_mut();
-        let root = self2.serial_root.borrow_mut();
-        let element = Object::new(&schema, obj_name.to_string());
-        let node = new_s(NodeOption {
-            scope: Rc::downgrade(&self.0),
-            id: schema2.take_id(),
-            serial_before: root.children.last().copied(),
-            serial_switch: switch,
-            element: element.clone(),
-            rust: None,
-        });
-        element.0.borrow_mut().nesting_parent = NestingParent::Option(node, self.clone());
-        root.children.push(node.into());
-        return (node, element);
     }
 
     /// Returns the parent node of self at the same level graph as the serial node it
@@ -275,7 +284,7 @@ impl Object {
         let mut self2 = self.0.as_ref().borrow_mut();
         let schema = self2.schema.upgrade().unwrap();
         let schema = schema.as_ref().borrow_mut();
-        let const_ = new_s(NodeRustConst {
+        let const_ = new_s(NodeConst {
             id: schema.take_id(),
             serial: RedirectRef {
                 primary: serial,
@@ -299,7 +308,7 @@ impl Object {
         let field = new_s(NodeRustField {
             id: schema.take_id(),
             field_name: name,
-            serial,
+            serial: serial,
             value_external: external.is_some(),
             obj: self2.rust_root,
         });

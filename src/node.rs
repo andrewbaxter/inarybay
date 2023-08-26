@@ -1,37 +1,83 @@
+use enum_dispatch::enum_dispatch;
 use proc_macro2::TokenStream;
 use crate::{
     util::S,
-    node_serial::NodeSerial,
-    node_fixed_range::NodeSerialFixedRange,
+    node_serial::{
+        NodeSerial,
+        NodeSerialSegment,
+    },
+    node_fixed_bytes::NodeFixedBytes,
     node_int::NodeInt,
-    node_dynamic_range::NodeDynamicRange,
+    node_dynamic_bytes::NodeDynamicBytes,
     node_dynamic_array::NodeDynamicArray,
-    node_option::NodeOption,
-    node_rust_const::NodeRustConst,
-    node_rust_obj::{
+    node_const::NodeConst,
+    node_rust::{
         NodeRustField,
         NodeRustObj,
     },
     node_enum::NodeEnum,
     object::Object_,
+    node_zero::NodeZero,
 };
 
+#[enum_dispatch]
+pub(crate) trait NodeMethods {
+    fn read_deps(&self) -> Vec<Node>;
+    fn generate_read(&self) -> TokenStream;
+    fn write_deps(&self) -> Vec<Node>;
+    fn generate_write(&self) -> TokenStream;
+}
+
+impl<T: NodeMethods> NodeMethods for S<T> {
+    fn read_deps(&self) -> Vec<Node> {
+        return self.read_deps();
+    }
+
+    fn generate_read(&self) -> TokenStream {
+        return self.generate_read();
+    }
+
+    fn write_deps(&self) -> Vec<Node> {
+        return self.write_deps();
+    }
+
+    fn generate_write(&self) -> TokenStream {
+        return self.generate_write();
+    }
+}
+
 #[samevariant::samevariant(NodeSameVariant)]
+#[enum_dispatch(NodeMethods)]
 pub(crate) enum Node_ {
     Serial(S<NodeSerial>),
-    FixedRange(S<NodeSerialFixedRange>),
+    SerialSegment(S<NodeSerialSegment>),
+    FixedBytes(S<NodeFixedBytes>),
     Int(S<NodeInt>),
-    DynamicRange(S<NodeDynamicRange>),
+    DynamicBytes(S<NodeDynamicBytes>),
     Array(S<NodeDynamicArray>),
     Enum(S<NodeEnum>),
-    Option(S<NodeOption>),
-    Const(S<NodeRustConst>),
+    Const(S<NodeConst>),
+    Zero(S<NodeZero>),
     RustField(S<NodeRustField>),
     RustObj(S<NodeRustObj>),
 }
 
 impl Node_ {
-    pub(crate) fn typestr(&self) -> String { }
+    pub(crate) fn typestr(&self) -> &'static str {
+        match self {
+            Node_::Serial(_) => unreachable!(),
+            Node_::SerialSegment(_) => unreachable!(),
+            Node_::FixedBytes(_) => "fixed bytes",
+            Node_::Int(_) => "int",
+            Node_::DynamicBytes(_) => "dynamic bytes",
+            Node_::Array(_) => "array",
+            Node_::Enum(_) => "enum",
+            Node_::Const(_) => "const",
+            Node_::Zero(_) => "zero",
+            Node_::RustField(_) => unreachable!(),
+            Node_::RustObj(_) => unreachable!(),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -43,9 +89,15 @@ impl From<S<NodeSerial>> for Node {
     }
 }
 
-impl From<S<NodeSerialFixedRange>> for Node {
-    fn from(value: S<NodeSerialFixedRange>) -> Self {
-        return Node(Box::leak(Box::new(Node_::FixedRange(value))));
+impl From<S<NodeSerialSegment>> for Node {
+    fn from(value: S<NodeSerialSegment>) -> Self {
+        return Node(Box::leak(Box::new(Node_::SerialSegment(value))));
+    }
+}
+
+impl From<S<NodeFixedBytes>> for Node {
+    fn from(value: S<NodeFixedBytes>) -> Self {
+        return Node(Box::leak(Box::new(Node_::FixedBytes(value))));
     }
 }
 
@@ -55,9 +107,9 @@ impl From<S<NodeInt>> for Node {
     }
 }
 
-impl From<S<NodeDynamicRange>> for Node {
-    fn from(value: S<NodeDynamicRange>) -> Self {
-        return Node(Box::leak(Box::new(Node_::DynamicRange(value))));
+impl From<S<NodeDynamicBytes>> for Node {
+    fn from(value: S<NodeDynamicBytes>) -> Self {
+        return Node(Box::leak(Box::new(Node_::DynamicBytes(value))));
     }
 }
 
@@ -73,14 +125,8 @@ impl From<S<NodeEnum>> for Node {
     }
 }
 
-impl From<S<NodeOption>> for Node {
-    fn from(value: S<NodeOption>) -> Self {
-        return Node(Box::leak(Box::new(Node_::Option(value))));
-    }
-}
-
-impl From<S<NodeRustConst>> for Node {
-    fn from(value: S<NodeRustConst>) -> Self {
+impl From<S<NodeConst>> for Node {
+    fn from(value: S<NodeConst>) -> Self {
         return Node(Box::leak(Box::new(Node_::Const(value))));
     }
 }
@@ -103,62 +149,72 @@ impl Node {
     pub(crate) fn scope_ptr(&self) -> *const Object_ {
         match &*self.0 {
             Node_::Serial(i) => unreachable!(),
-            Node_::FixedRange(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
+            Node_::FixedBytes(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
             Node_::Int(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
-            Node_::DynamicRange(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
+            Node_::DynamicBytes(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
             Node_::Array(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
             Node_::Enum(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
-            Node_::Option(i) => i.borrow().scope.upgrade().unwrap().as_ptr(),
             Node_::Const(i) => unreachable!(),
             Node_::RustField(i) => unreachable!(),
             Node_::RustObj(i) => unreachable!(),
         }
     }
 
-    pub(crate) fn read_deps(&self) -> Vec<Node> {
-        match self.0 {
-            Node_::Serial(n) => return n.borrow().read_deps(),
-            Node_::FixedRange(n) => return n.borrow().read_deps(),
-            Node_::Int(n) => return n.borrow().read_deps(),
-            Node_::DynamicRange(n) => return n.borrow().read_deps(),
-            Node_::Array(n) => return n.borrow().read_deps(),
-            Node_::Enum(n) => return n.borrow().read_deps(),
-            Node_::Option(n) => return n.borrow().read_deps(),
-            Node_::Const(n) => return n.borrow().read_deps(),
-            Node_::RustField(n) => return n.borrow().read_deps(),
-            Node_::RustObj(n) => return n.borrow().read_deps(),
-        }
-    }
-
-    pub(crate) fn write_deps(&self) -> Vec<Node> {
-        match self.0 {
-            Node_::Serial(n) => return n.borrow().write_deps(),
-            Node_::FixedRange(n) => return n.borrow().write_deps(),
-            Node_::Int(n) => return n.borrow().write_deps(),
-            Node_::DynamicRange(n) => return n.borrow().write_deps(),
-            Node_::Array(n) => return n.borrow().write_deps(),
-            Node_::Enum(n) => return n.borrow().write_deps(),
-            Node_::Option(n) => return n.borrow().write_deps(),
-            Node_::Const(n) => return n.borrow().write_deps(),
-            Node_::RustField(n) => return n.borrow().write_deps(),
-            Node_::RustObj(n) => return n.borrow().write_deps(),
-        }
-    }
-
-    pub(crate) fn write_default(&self) -> TokenStream { }
-
     pub(crate) fn id(&self) -> String {
         match self.0 {
             Node_::Serial(n) => return n.borrow().id.clone(),
-            Node_::FixedRange(n) => return n.borrow().id.clone(),
+            Node_::FixedBytes(n) => return n.borrow().id.clone(),
             Node_::Int(n) => return n.borrow().id.clone(),
-            Node_::DynamicRange(n) => return n.borrow().id.clone(),
+            Node_::DynamicBytes(n) => return n.borrow().id.clone(),
             Node_::Array(n) => return n.borrow().id.clone(),
             Node_::Enum(n) => return n.borrow().id.clone(),
-            Node_::Option(n) => return n.borrow().id.clone(),
             Node_::Const(n) => return n.borrow().id.clone(),
             Node_::RustField(n) => return n.borrow().id.clone(),
             Node_::RustObj(n) => return n.borrow().id.clone(),
+        }
+    }
+}
+
+pub(crate) trait ToDep {
+    fn dep(&self) -> Vec<Node>;
+}
+
+impl<T: Into<Node>> ToDep for T {
+    fn dep(&self) -> Vec<Node> {
+        return vec![(*self).into()];
+    }
+}
+
+impl<T: ToDep> ToDep for Option<T> {
+    fn dep(&self) -> Vec<Node> {
+        return self.iter().flat_map(|x| x.dep()).collect();
+    }
+}
+
+impl<T: ToDep> ToDep for Vec<T> {
+    fn dep(&self) -> Vec<Node> {
+        return self.iter().flat_map(|x| x.dep()).collect();
+    }
+}
+
+pub(crate) struct RedirectRef<T, U> {
+    // Original ref
+    pub(crate) primary: T,
+    // Replacement for dep resolution
+    pub(crate) redirect: Option<U>,
+}
+
+impl<T: Into<Node>, U: Into<Node>> ToDep for RedirectRef<T, U> {
+    fn dep(&self) -> Vec<Node> {
+        return vec![self.redirect.map(|x| x.into()).unwrap_or_else(|| self.primary.into())];
+    }
+}
+
+impl<T, U> RedirectRef<T, U> {
+    pub(crate) fn new(v: T) -> Self {
+        Self {
+            primary: v,
+            redirect: None,
         }
     }
 }

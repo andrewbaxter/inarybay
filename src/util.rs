@@ -14,26 +14,6 @@ use quote::{
     format_ident,
 };
 
-pub(crate) struct RedirectRef<T, U> {
-    // Original ref
-    pub(crate) primary: T,
-    // Replacement for dep resolution
-    pub(crate) redirect: Option<U>,
-}
-
-impl<T, U> RedirectRef<T, U> {
-    fn new(v: T) -> Self {
-        Self {
-            primary: v,
-            redirect: None,
-        }
-    }
-
-    fn redirect(&mut self, v: U) {
-        self.redirect = Some(v);
-    }
-}
-
 pub(crate) trait ToIdent {
     fn ident(&self) -> Ident;
 }
