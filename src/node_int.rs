@@ -14,7 +14,7 @@ use crate::{
         LateInit,
         new_s,
     },
-    node_fixed_bytes::NodeFixedBytes,
+    node_fixed_range::NodeFixedRange,
     node::{
         Node,
         RedirectRef,
@@ -49,7 +49,7 @@ pub(crate) struct NodeIntArgs {
 pub(crate) struct NodeInt_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
-    pub(crate) serial: LateInit<RedirectRef<NodeFixedBytes, Node>>,
+    pub(crate) serial: LateInit<RedirectRef<NodeFixedRange, Node>>,
     pub(crate) start: BVec,
     pub(crate) len: BVec,
     pub(crate) signed: bool,

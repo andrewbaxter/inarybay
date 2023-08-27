@@ -64,8 +64,8 @@ impl Schema {
     }
 
     /// Define a new de/serializable object.
-    pub fn object(&self, id: impl Into<String>, name: String) -> Object {
-        return Object::new(id, &self, name);
+    pub fn object(&self, id: impl Into<String>, name: impl Into<String>) -> Object {
+        return Object::new(id, &self, name.into());
     }
 
     /// Generate code for the described schema.
@@ -341,7 +341,7 @@ pub(crate) fn generate_write(obj: &Object_) -> TokenStream {
 
             // Prep before visiting deps
             match &node.0 {
-                Node_::FixedBytes(n) => {
+                Node_::FixedRange(n) => {
                     code.push(n.0.borrow().generate_pre_write());
                 },
                 _ => { },

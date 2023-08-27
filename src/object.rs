@@ -1,10 +1,8 @@
 use std::{
-    fmt::Display,
     collections::{
         HashMap,
         BTreeMap,
     },
-    borrow::BorrowMut,
 };
 use gc::{
     Finalize,
@@ -43,9 +41,9 @@ use crate::{
         RedirectRef,
         NodeMethods,
     },
-    node_fixed_bytes::{
-        NodeFixedBytes,
-        NodeFixedBytes_,
+    node_fixed_range::{
+        NodeFixedRange,
+        NodeFixedRange_,
     },
     node_int::{
         NodeInt,
@@ -64,6 +62,10 @@ use crate::{
         NodeEnum,
         EnumVariant,
         NodeEnum_,
+    },
+    node_fixed_bytes::{
+        NodeFixedBytes,
+        NodeFixedBytesArgs,
     },
 };
 
@@ -136,7 +138,7 @@ enum RangeAlloc {
 
 #[derive(Trace, Finalize)]
 struct Range_ {
-    serial: NodeFixedBytes,
+    serial: NodeFixedRange,
     alloc: RangeAlloc,
 }
 
@@ -152,25 +154,26 @@ pub struct Enum {
 impl Object {
     pub(crate) fn new(id: impl Into<String>, schema: &Schema, name: String) -> Object {
         let id = id.into();
-        let mut schema2 = schema.0.as_ref().borrow_mut();
+        let serial_root = NodeSerial(new_s(NodeSerial_ {
+            id: schema.0.as_ref().borrow_mut().take_id(format!("{}__serial", id)),
+            children: vec![],
+            lifted_serial_deps: BTreeMap::new(),
+        }));
+        let rust_root = NodeRustObj(new_s(NodeRustObj_ {
+            id: schema.0.as_ref().borrow_mut().take_id(format!("{}__rust", id)),
+            type_name: name.clone(),
+            fields: vec![],
+        }));
         let out = Object(Gc::new(GcCell::new(Object_ {
             schema: schema.clone(),
             nesting_parent: NestingParent::None,
             id: schema.0.as_ref().borrow_mut().take_id(id.clone()),
-            serial_root: NodeSerial(new_s(NodeSerial_ {
-                id: schema.0.as_ref().borrow_mut().take_id(format!("{}__serial", id)),
-                children: vec![],
-                lifted_serial_deps: BTreeMap::new(),
-            })),
-            rust_root: NodeRustObj(new_s(NodeRustObj_ {
-                id: schema.0.as_ref().borrow_mut().take_id(format!("{}__rust", id)),
-                type_name: name.clone(),
-                fields: vec![],
-            })),
+            serial_root: serial_root,
+            rust_root: rust_root,
             rust_const_roots: vec![],
             has_external_deps: false,
         })));
-        schema2.objects.entry(name).or_insert_with(Vec::new).push(out.clone());
+        schema.0.as_ref().borrow_mut().objects.entry(name).or_insert_with(Vec::new).push(out.clone());
         return out;
     }
 
@@ -183,7 +186,7 @@ impl Object {
         let mut root = self2.serial_root.0.as_ref().borrow_mut();
         let out = NodeSerialSegment(new_s(NodeSerialSegment_ {
             scope: self.clone(),
-            id: self.0.borrow().schema.0.as_ref().borrow_mut().take_id(format!("{}__serial_seg", id)),
+            id: self2.schema.0.as_ref().borrow_mut().take_id(format!("{}__serial_seg", id)),
             serial_root: self2.serial_root.clone().into(),
             serial_before: root.children.last().cloned(),
             rust: None,
@@ -192,11 +195,11 @@ impl Object {
         return out;
     }
 
-    pub fn fixed_bytes(&self, id: impl Into<String>, bytes: usize) -> Range {
+    pub fn fixed_range(&self, id: impl Into<String>, bytes: usize) -> Range {
         let id = id.into();
         let seg = self.seg(&id);
         let self2 = self.0.as_ref().borrow();
-        let serial = NodeFixedBytes(new_s(NodeFixedBytes_ {
+        let serial = NodeFixedRange(new_s(NodeFixedRange_ {
             scope: self.clone(),
             id: self.0.borrow().schema.0.as_ref().borrow_mut().take_id(id),
             serial_before: self2.serial_root.0.borrow().children.last().map(|x| x.clone().into()),
@@ -305,7 +308,7 @@ impl Object {
         }
     }
 
-    pub fn sub_fixed_bytes(&self, range: Range, bytes: usize, bits: usize) -> Range {
+    pub fn subrange(&self, range: &Range, bytes: usize, bits: usize) -> Range {
         let mut range2 = range.0.as_ref().borrow_mut();
         let using = BVec {
             bytes: bytes,
@@ -398,7 +401,33 @@ impl Object {
         }
     }
 
-    pub fn int(&mut self, id: impl Into<String>, range: Range, endian: Endian, signed: bool) -> NodeInt {
+    pub fn bytes(&self, id: impl Into<String>, range: Range) -> NodeFixedBytes {
+        let id = id.into();
+        let mut range2 = range.0.as_ref().borrow_mut();
+        let ancestry = self.get_ancestry_to(&range2.serial.0.borrow().scope);
+        let using = self.modify_range(&mut range2, &ancestry, |alloc| {
+            if alloc.avail == BVec::zero() {
+                panic!("Range has no space available");
+            }
+            return alloc.clone();
+        });
+        if using.start.bits != 0 {
+            panic!("Must be byte-aligned but has non-zero bit offset");
+        }
+        if using.avail.bits != 0 {
+            panic!("Must be whole-byte-sized but has non-zero bit length");
+        }
+        let rust = NodeFixedBytes::new(NodeFixedBytesArgs {
+            scope: self.clone(),
+            id: self.0.borrow().schema.0.as_ref().borrow_mut().take_id(id),
+            start: using.start.bytes,
+            len: using.avail.bytes,
+        });
+        self.lift_connect(&ancestry, &range2.serial, rust.clone().into(), &mut rust.0.as_ref().borrow_mut().serial);
+        return rust;
+    }
+
+    pub fn int(&self, id: impl Into<String>, range: Range, endian: Endian, signed: bool) -> NodeInt {
         let id = id.into();
         let mut range2 = range.0.as_ref().borrow_mut();
         let ancestry = self.get_ancestry_to(&range2.serial.0.borrow().scope);
@@ -444,11 +473,11 @@ impl Object {
         &self,
         id: impl Into<String>,
         len: NodeInt,
-        obj_name: impl Display,
+        obj_name: impl Into<String>,
     ) -> (NodeDynamicArray, Object) {
         let id = id.into();
         let serial = self.seg(&id);
-        let obj_name = obj_name.to_string();
+        let obj_name = obj_name.into();
         let self2 = self.0.as_ref().borrow_mut();
         let root = self2.serial_root.0.as_ref().borrow_mut();
         let element = Object::new(&id, &self2.schema, obj_name);
@@ -470,10 +499,16 @@ impl Object {
         return (rust, element);
     }
 
-    pub fn enum_(&self, id: impl Into<String>, tag: Node, enum_name: impl Display) -> (NodeEnum, Enum) {
+    pub fn enum_(
+        &self,
+        id: impl Into<String>,
+        tag: impl Into<Node>,
+        enum_name: impl Into<String>,
+    ) -> (NodeEnum, Enum) {
         let id = id.into();
+        let tag = tag.into();
         let serial = self.seg(&id);
-        let enum_name = enum_name.to_string();
+        let enum_name = enum_name.into();
         let self2 = self.0.as_ref().borrow_mut();
         let root = self2.serial_root.0.as_ref().borrow_mut();
         let rust = NodeEnum(new_s(NodeEnum_ {
@@ -501,7 +536,7 @@ impl Object {
         });
     }
 
-    pub fn rust_const_int(&self, id: impl Into<String>, serial: impl Into<Node>, value: TokenStream) {
+    pub fn rust_const(&self, id: impl Into<String>, serial: impl Into<Node>, value: TokenStream) {
         let id = id.into();
         let serial: Node = serial.into();
         let mut self2 = self.0.as_ref().borrow_mut();
@@ -519,13 +554,13 @@ impl Object {
         );
     }
 
-    pub fn rust_field(&self, id: impl Into<String>, serial: impl Into<Node>, name: impl Display) {
+    pub fn rust_field(&self, id: impl Into<String>, serial: impl Into<Node>, name: impl Into<String>) {
         let id = id.into();
         let serial = serial.into();
         let self2 = self.0.as_ref().borrow_mut();
         let rust = NodeRustField(new_s(NodeRustField_ {
             id: self2.schema.0.as_ref().borrow_mut().take_id(id),
-            field_name: name.to_string(),
+            field_name: name.into(),
             serial: None,
             obj: self2.rust_root.clone(),
         }));
@@ -543,14 +578,14 @@ impl Enum {
     pub fn variant(
         &self,
         id: impl Into<String>,
-        variant_name: impl Display,
-        obj_name: impl Display,
+        variant_name: impl Into<String>,
+        obj_name: impl Into<String>,
         tag: TokenStream,
     ) -> Object {
         let id = id.into();
-        let variant_name = variant_name.to_string();
+        let variant_name = variant_name.into();
         let mut enum_ = self.enum_.0.as_ref().borrow_mut();
-        let element = Object::new(id, &self.schema, obj_name.to_string());
+        let element = Object::new(id, &self.schema, obj_name.into());
         enum_.variants.push(EnumVariant {
             var_name: variant_name.clone(),
             tag: tag,

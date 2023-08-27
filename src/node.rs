@@ -9,7 +9,7 @@ use crate::{
         NodeSerial,
         NodeSerialSegment,
     },
-    node_fixed_bytes::NodeFixedBytes,
+    node_fixed_range::NodeFixedRange,
     node_int::NodeInt,
     node_dynamic_bytes::NodeDynamicBytes,
     node_dynamic_array::NodeDynamicArray,
@@ -23,6 +23,7 @@ use crate::{
         Object,
     },
     node_zero::NodeZero,
+    node_fixed_bytes::NodeFixedBytes,
 };
 
 pub(crate) trait NodeMethods_ {
@@ -87,6 +88,7 @@ macro_rules! derive_forward_node_methods{
 pub(crate) enum Node_ {
     Serial(NodeSerial),
     SerialSegment(NodeSerialSegment),
+    FixedRange(NodeFixedRange),
     FixedBytes(NodeFixedBytes),
     Int(NodeInt),
     DynamicBytes(NodeDynamicBytes),
@@ -104,6 +106,7 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::gather_read_deps(inner),
             Node_::SerialSegment(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::FixedRange(inner) => NodeMethods::gather_read_deps(inner),
             Node_::FixedBytes(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Int(inner) => NodeMethods::gather_read_deps(inner),
             Node_::DynamicBytes(inner) => NodeMethods::gather_read_deps(inner),
@@ -121,6 +124,7 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::generate_read(inner),
             Node_::SerialSegment(inner) => NodeMethods::generate_read(inner),
+            Node_::FixedRange(inner) => NodeMethods::generate_read(inner),
             Node_::FixedBytes(inner) => NodeMethods::generate_read(inner),
             Node_::Int(inner) => NodeMethods::generate_read(inner),
             Node_::DynamicBytes(inner) => NodeMethods::generate_read(inner),
@@ -138,6 +142,7 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::gather_write_deps(inner),
             Node_::SerialSegment(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::FixedRange(inner) => NodeMethods::gather_write_deps(inner),
             Node_::FixedBytes(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Int(inner) => NodeMethods::gather_write_deps(inner),
             Node_::DynamicBytes(inner) => NodeMethods::gather_write_deps(inner),
@@ -155,6 +160,7 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::generate_write(inner),
             Node_::SerialSegment(inner) => NodeMethods::generate_write(inner),
+            Node_::FixedRange(inner) => NodeMethods::generate_write(inner),
             Node_::FixedBytes(inner) => NodeMethods::generate_write(inner),
             Node_::Int(inner) => NodeMethods::generate_write(inner),
             Node_::DynamicBytes(inner) => NodeMethods::generate_write(inner),
@@ -174,6 +180,9 @@ impl NodeMethods for Node_ {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
             Node_::SerialSegment(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::FixedRange(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
             Node_::FixedBytes(inner) => {
@@ -205,6 +214,7 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::scope(inner),
             Node_::SerialSegment(inner) => NodeMethods::scope(inner),
+            Node_::FixedRange(inner) => NodeMethods::scope(inner),
             Node_::FixedBytes(inner) => NodeMethods::scope(inner),
             Node_::Int(inner) => NodeMethods::scope(inner),
             Node_::DynamicBytes(inner) => NodeMethods::scope(inner),
@@ -222,6 +232,7 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::id(inner),
             Node_::SerialSegment(inner) => NodeMethods::id(inner),
+            Node_::FixedRange(inner) => NodeMethods::id(inner),
             Node_::FixedBytes(inner) => NodeMethods::id(inner),
             Node_::Int(inner) => NodeMethods::id(inner),
             Node_::DynamicBytes(inner) => NodeMethods::id(inner),
@@ -240,6 +251,7 @@ impl Node_ {
         match self {
             Node_::Serial(_) => unreachable!(),
             Node_::SerialSegment(_) => unreachable!(),
+            Node_::FixedRange(_) => unreachable!(),
             Node_::FixedBytes(_) => "fixed bytes",
             Node_::Int(_) => "int",
             Node_::DynamicBytes(_) => "dynamic bytes",
@@ -283,16 +295,6 @@ impl NodeMethods for Node {
 
     fn id(&self) -> String {
         return self.0.id();
-    }
-}
-
-impl Node {
-    pub(crate) fn scope(&self) -> Object {
-        todo!()
-    }
-
-    pub(crate) fn id(&self) -> String {
-        todo!()
     }
 }
 
