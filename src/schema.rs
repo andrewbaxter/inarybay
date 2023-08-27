@@ -37,19 +37,11 @@ use crate::{
 
 #[derive(Trace, Finalize)]
 pub struct Schema_ {
-    seen_ids: HashSet<String>,
     pub(crate) objects: BTreeMap<String, Vec<Object>>,
     pub(crate) enums: BTreeMap<String, Vec<NodeEnum>>,
 }
 
-impl Schema_ {
-    pub(crate) fn take_id(&mut self, id: String) -> String {
-        if !self.seen_ids.insert(id.clone()) {
-            panic!("Id {} already used", id);
-        }
-        return id;
-    }
-}
+impl Schema_ { }
 
 #[derive(Clone, Trace, Finalize)]
 pub struct Schema(pub(crate) Gc<GcCell<Schema_>>);
@@ -57,7 +49,6 @@ pub struct Schema(pub(crate) Gc<GcCell<Schema_>>);
 impl Schema {
     pub fn new() -> Schema {
         return Schema(Gc::new(GcCell::new(Schema_ {
-            seen_ids: HashSet::new(),
             objects: BTreeMap::new(),
             enums: BTreeMap::new(),
         })));
@@ -264,20 +255,20 @@ impl Schema {
                 let obj_ident = root_obj.id.ident();
                 let serial_ident = root.0.serial_root.0.id.ident();
                 let mut methods = vec![];
-                if write {
-                    let code = generate_write(&root.0);
-                    methods.push(quote!{
-                        pub fn write(&self, #serial_ident: std:: io:: Write) {
-                            let #obj_ident = self;
-                            #code
-                        }
-                    });
-                }
                 if read {
                     let code = generate_read(&root.0);
                     methods.push(quote!{
-                        pub fn read(#serial_ident: std:: io:: Read) -> Self {
+                        pub fn read(#serial_ident: impl std:: io:: Read) -> Self {
                             #code return #obj_ident;
+                        }
+                    });
+                }
+                if write {
+                    let code = generate_write(&root.0);
+                    methods.push(quote!{
+                        pub fn write(&self, #serial_ident: impl std:: io:: Write) {
+                            let #obj_ident = self;
+                            #code
                         }
                     });
                 }

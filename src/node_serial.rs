@@ -49,15 +49,7 @@ impl NodeMethods for NodeSerial_ {
     }
 
     fn generate_write(&self) -> TokenStream {
-        let mut code = vec![];
-        let serial_ident = self.id.ident();
-        for child in &self.mut_.borrow().children {
-            let child_ident = child.0.id.ident();
-            code.push(quote!{
-                #serial_ident.write(& #child_ident) ?;
-            });
-        }
-        return quote!(#(#code) *);
+        return quote!();
     }
 
     fn set_rust(&self, _rust: Node) {

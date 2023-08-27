@@ -2,7 +2,12 @@ use std::{
     collections::{
         HashMap,
         BTreeMap,
+        HashSet,
     },
+    cell::{
+        RefCell,
+    },
+    rc::Rc,
 };
 use gc::{
     Finalize,
@@ -76,28 +81,29 @@ use crate::{
 };
 
 #[derive(Clone, Trace, Finalize)]
-pub(crate) struct NestingParentEnum {
+pub(crate) struct EscapableParentEnum {
     enum_: NodeEnum,
     variant_name: String,
     parent: Object,
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub(crate) enum NestingParent {
+pub(crate) enum EscapableParent {
     None,
-    Enum(NestingParentEnum),
+    Enum(EscapableParentEnum),
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub(crate) enum SomeNestingParent {
-    Enum(NestingParentEnum),
+pub(crate) enum SomeEscapableParent {
+    Enum(EscapableParentEnum),
 }
 
 #[derive(Trace, Finalize)]
 pub(crate) struct ObjectMut_ {
-    pub(crate) nesting_parent: NestingParent,
+    pub(crate) escapable_parent: EscapableParent,
     pub(crate) rust_const_roots: Vec<NodeConst>,
     pub(crate) has_external_deps: bool,
+    seen_ids: HashSet<String>,
 }
 
 #[derive(Trace, Finalize)]
@@ -119,38 +125,23 @@ struct RangeAllocSingle {
     avail: BVec,
 }
 
-unsafe impl Trace for RangeAllocSingle {
-    unsafe fn trace(&self) { }
-
-    unsafe fn root(&self) { }
-
-    unsafe fn unroot(&self) { }
-
-    fn finalize_glue(&self) { }
-}
-
-impl Finalize for RangeAllocSingle {
-    fn finalize(&self) { }
-}
-
-#[derive(Trace, Finalize)]
 struct RangeAllocEnum {
     enum_id: String,
     template_alloc: RangeAllocSingle,
-    variants: HashMap<String, RangeAlloc>,
+    variants: HashMap<String, Rc<RefCell<RangeAlloc>>>,
 }
 
-#[derive(Trace, Finalize)]
 enum RangeAlloc {
     Unset(RangeAllocSingle),
-    Local(RangeAllocSingle),
+    Local(Object, RangeAllocSingle),
     Enum(RangeAllocEnum),
 }
 
 #[derive(Trace, Finalize)]
 struct Range_ {
     serial: NodeFixedRange,
-    alloc: RangeAlloc,
+    #[unsafe_ignore_trace]
+    alloc: Rc<RefCell<RangeAlloc>>,
 }
 
 #[derive(Clone)]
@@ -165,31 +156,57 @@ pub struct Enum {
 impl Object {
     pub(crate) fn new(id: impl Into<String>, schema: &Schema, name: String) -> Object {
         let id = id.into();
+        let serial_id = format!("{}__serial", id);
+        let rust_id = format!("{}__rust", id);
         let serial_root = NodeSerial(Gc::new(NodeSerial_ {
-            id: schema.0.as_ref().borrow_mut().take_id(format!("{}__serial", id)),
+            id: serial_id.clone(),
             mut_: GcCell::new(NodeSerialMut_ {
                 children: vec![],
                 lifted_serial_deps: BTreeMap::new(),
             }),
         }));
         let rust_root = NodeRustObj(Gc::new(NodeRustObj_ {
-            id: schema.0.as_ref().borrow_mut().take_id(format!("{}__rust", id)),
+            id: rust_id.clone(),
             type_name: name.clone(),
             mut_: GcCell::new(NodeRustObjMut_ { fields: vec![] }),
         }));
         let out = Object(Gc::new(Object_ {
             schema: schema.clone(),
-            id: schema.0.as_ref().borrow_mut().take_id(id.clone()),
+            id: id.clone(),
             serial_root: serial_root,
             rust_root: rust_root,
             mut_: GcCell::new(ObjectMut_ {
-                nesting_parent: NestingParent::None,
+                escapable_parent: EscapableParent::None,
                 rust_const_roots: vec![],
                 has_external_deps: false,
+                seen_ids: HashSet::new(),
             }),
         }));
+        out.take_id(id);
+        out.take_id(serial_id);
+        out.take_id(rust_id);
         schema.0.as_ref().borrow_mut().objects.entry(name).or_insert_with(Vec::new).push(out.clone());
         return out;
+    }
+
+    fn take_id(&self, id: String) -> String {
+        let mut at = self.clone();
+        loop {
+            if at.0.mut_.borrow().seen_ids.contains(&id) {
+                panic!("Id {} already used in scope {}", id, at.0.id);
+            }
+            let escapable_parent = at.0.mut_.borrow().escapable_parent.clone();
+            match &escapable_parent {
+                EscapableParent::None => {
+                    break;
+                },
+                EscapableParent::Enum(e) => {
+                    at = e.parent.clone();
+                },
+            };
+        }
+        self.0.mut_.borrow_mut().seen_ids.insert(id.clone());
+        return id;
     }
 
     fn id(&self) -> String {
@@ -199,7 +216,7 @@ impl Object {
     fn seg(&self, id: &str) -> NodeSerialSegment {
         let out = NodeSerialSegment(Gc::new(NodeSerialSegment_ {
             scope: self.clone(),
-            id: self.0.schema.0.as_ref().borrow_mut().take_id(format!("{}__serial_seg", id)),
+            id: self.take_id(format!("{}__serial_seg", id)),
             serial_root: self.0.serial_root.clone().into(),
             serial_before: self.0.serial_root.0.mut_.borrow().children.last().cloned(),
             mut_: GcCell::new(NodeSerialSegmentMut_ { rust: None }),
@@ -210,7 +227,7 @@ impl Object {
 
     pub fn fixed_range(&self, id: impl Into<String>, bytes: usize) -> Range {
         let id = id.into();
-        let node_id = self.0.schema.0.as_ref().borrow_mut().take_id(id.clone());
+        let node_id = self.take_id(id.clone());
         let seg = self.seg(&id);
         let serial = NodeFixedRange(Gc::new(NodeFixedRange_ {
             scope: self.clone(),
@@ -223,30 +240,30 @@ impl Object {
         seg.0.mut_.borrow_mut().rust = Some(serial.clone().into());
         return Range(Gc::new(GcCell::new(Range_ {
             serial: serial,
-            alloc: RangeAlloc::Unset(RangeAllocSingle {
+            alloc: Rc::new(RefCell::new(RangeAlloc::Unset(RangeAllocSingle {
                 start: BVec::zero(),
                 avail: BVec::bytes(bytes),
-            }),
+            }))),
         })));
     }
 
-    fn get_ancestry_to(&self, serial: &dyn NodeMethods) -> Vec<SomeNestingParent> {
+    fn get_ancestry_to(&self, serial: &dyn NodeMethods) -> Vec<SomeEscapableParent> {
         let mut ancestry = vec![];
         let mut at = self.clone();
         loop {
             if at.id() == serial.scope().id() {
                 break;
             }
-            let nesting_parent = at.0.mut_.borrow().nesting_parent.clone();
+            let nesting_parent = at.0.mut_.borrow().escapable_parent.clone();
             match &nesting_parent {
-                NestingParent::None => {
+                EscapableParent::None => {
                     panic!(
                         "Serial-side dependency {} is not from any containing scope; maybe this is within an array context and so can't depend on higher scopes",
                         serial.id()
                     );
                 },
-                NestingParent::Enum(e) => {
-                    ancestry.push(SomeNestingParent::Enum(e.clone()));
+                EscapableParent::Enum(e) => {
+                    ancestry.push(SomeEscapableParent::Enum(e.clone()));
                     at = e.parent.clone();
                 },
             };
@@ -260,66 +277,85 @@ impl Object {
     >(
         &self,
         range: &mut Range_,
-        ancestry: &Vec<SomeNestingParent>,
+        ancestry: &Vec<SomeEscapableParent>,
         f: impl FnOnce(&mut RangeAllocSingle) -> T,
     ) -> T {
-        let mut at = &mut range.alloc;
-        for e in ancestry {
-            match e {
-                SomeNestingParent::Enum(ancestor_enum) => {
-                    match at {
+        let mut range_level = range.alloc.clone();
+
+        // Trace ancestry from shared root up to current level
+        for ancestor_level in ancestry {
+            match ancestor_level {
+                SomeEscapableParent::Enum(ancestor_enum) => {
+                    let range_level1 = range_level.clone();
+                    let mut range_level2 = range_level1.borrow_mut();
+                    let range_level3 = &mut *range_level2;
+                    match range_level3 {
                         RangeAlloc::Unset(alloc) => {
                             let alloc = alloc.clone();
-                            *at = RangeAlloc::Enum(RangeAllocEnum {
+                            *range_level3 = RangeAlloc::Enum(RangeAllocEnum {
                                 enum_id: ancestor_enum.enum_.0.type_name.clone(),
                                 template_alloc: alloc,
                                 variants: HashMap::new(),
                             });
-                            match at {
+                            match range_level3 {
                                 RangeAlloc::Enum(e) => {
-                                    e.variants.insert(ancestor_enum.variant_name.clone(), RangeAlloc::Unset(alloc));
-                                    at = e.variants.get_mut(&ancestor_enum.variant_name).unwrap();
+                                    e
+                                        .variants
+                                        .insert(
+                                            ancestor_enum.variant_name.clone(),
+                                            Rc::new(RefCell::new(RangeAlloc::Unset(alloc))),
+                                        );
+                                    range_level = e.variants.get(&ancestor_enum.variant_name).unwrap().clone();
                                 },
                                 _ => unreachable!(),
                             };
                         },
-                        RangeAlloc::Local(_) => panic!("TODO already used in object X"),
-                        RangeAlloc::Enum(existing) => {
-                            if existing.enum_id != ancestor_enum.enum_.0.type_name {
-                                panic!("TODO already used by other enum X");
+                        RangeAlloc::Local(obj, _) => panic!(
+                            "This range is already used by something else in this scope: {}",
+                            obj.0.id
+                        ),
+                        RangeAlloc::Enum(range_enum) => {
+                            if range_enum.enum_id != ancestor_enum.enum_.0.type_name {
+                                panic!(
+                                    "This range is already used another enum that's not an ancestor: {} (ancestor at that level is {})",
+                                    range_enum.enum_id,
+                                    ancestor_enum.enum_.0.type_name
+                                );
                             }
                             let old =
-                                existing
+                                range_enum
                                     .variants
                                     .insert(
                                         ancestor_enum.variant_name.clone(),
-                                        RangeAlloc::Unset(existing.template_alloc),
+                                        Rc::new(RefCell::new(RangeAlloc::Unset(range_enum.template_alloc))),
                                     );
                             if old.is_some() {
-                                panic!("TODO already used by other variant X");
+                                // Different variant with same name, should be caught elsewhere?
+                                unreachable!();
                             }
-                            at = existing.variants.get_mut(&ancestor_enum.variant_name).unwrap();
+                            range_level = range_enum.variants.get_mut(&ancestor_enum.variant_name).unwrap().clone();
                         },
                     }
                 },
             }
         }
-        match at {
+        let mut range_level = range_level.borrow_mut();
+        let range_level = &mut *range_level;
+        match range_level {
             RangeAlloc::Unset(alloc) => {
-                let avail = *alloc;
-                range.alloc = RangeAlloc::Local(avail);
-                match &mut range.alloc {
-                    RangeAlloc::Local(avail) => {
-                        return f(avail);
+                *range_level = RangeAlloc::Local(self.clone(), *alloc);
+                match range_level {
+                    RangeAlloc::Local(_, alloc) => {
+                        return f(alloc);
                     },
                     _ => unreachable!(),
                 };
             },
-            RangeAlloc::Local(alloc) => {
+            RangeAlloc::Local(_, alloc) => {
                 return f(alloc);
             },
             RangeAlloc::Enum(enum_) => {
-                panic!("TODO already used by child variant X");
+                panic!("This range is already used by something else in this scope: enum {}", enum_.enum_id);
             },
         }
     }
@@ -347,10 +383,10 @@ impl Object {
         };
         let out = Range(Gc::new(GcCell::new(Range_ {
             serial: range2.serial.clone(),
-            alloc: RangeAlloc::Unset(RangeAllocSingle {
+            alloc: Rc::new(RefCell::new(RangeAlloc::Unset(RangeAllocSingle {
                 start: start,
                 avail: using,
-            }),
+            }))),
         })));
         return out;
     }
@@ -359,7 +395,7 @@ impl Object {
         T: Clone + NodeMethods + Into<Node> + Trace + Finalize,
     >(
         &self,
-        ancestry: &Vec<SomeNestingParent>,
+        ancestry: &Vec<SomeEscapableParent>,
         serial: &T,
         rust: Node,
         rust_field: &mut LateInit<RedirectRef<T, Node>>,
@@ -370,7 +406,7 @@ impl Object {
         } else {
             for (i, level) in ancestry.iter().enumerate() {
                 match level {
-                    SomeNestingParent::Enum(level) => {
+                    SomeEscapableParent::Enum(level) => {
                         if i == 0 {
                             // 1A
                             serial.set_rust(rust.clone());
@@ -418,7 +454,9 @@ impl Object {
             if alloc.avail == BVec::zero() {
                 panic!("Range has no space available");
             }
-            return alloc.clone();
+            let out = alloc.clone();
+            alloc.avail = BVec::zero();
+            return out;
         });
         if using.start.bits != 0 {
             panic!("Must be byte-aligned but has non-zero bit offset");
@@ -428,7 +466,7 @@ impl Object {
         }
         let rust = NodeFixedBytes::new(NodeFixedBytesArgs {
             scope: self.clone(),
-            id: self.0.schema.0.as_ref().borrow_mut().take_id(id),
+            id: self.take_id(id),
             start: using.start.bytes,
             len: using.avail.bytes,
         });
@@ -444,11 +482,13 @@ impl Object {
             if alloc.avail == BVec::zero() {
                 panic!("Range has no space available");
             }
-            return alloc.clone();
+            let out = alloc.clone();
+            alloc.avail = BVec::zero();
+            return out;
         });
         let rust = NodeInt::new(NodeIntArgs {
             scope: self.clone(),
-            id: self.0.schema.0.as_ref().borrow_mut().take_id(id),
+            id: self.take_id(id),
             start: using.start,
             len: using.avail,
             signed: signed,
@@ -463,7 +503,7 @@ impl Object {
         let serial = self.seg(&id);
         let rust = NodeDynamicBytes(Gc::new(NodeDynamicBytes_ {
             scope: self.clone(),
-            id: self.0.schema.0.as_ref().borrow_mut().take_id(id),
+            id: self.take_id(id),
             serial_before: self.0.serial_root.0.mut_.borrow().children.last().map(|x| x.clone().into()),
             serial: serial,
             mut_: GcCell::new(NodeDynamicBytesMut_ {
@@ -492,7 +532,7 @@ impl Object {
         let element = Object::new(&format!("{}__elem", id), &self.0.schema, obj_name);
         let rust = NodeDynamicArray(Gc::new(NodeDynamicArray_ {
             scope: self.clone(),
-            id: self.0.schema.0.as_ref().borrow_mut().take_id(id),
+            id: self.take_id(id),
             serial_before: self.0.serial_root.0.mut_.borrow().children.last().map(|x| x.clone().into()),
             serial: serial,
             element: element.clone(),
@@ -522,7 +562,7 @@ impl Object {
         let enum_name = enum_name.into();
         let rust = NodeEnum(Gc::new(NodeEnum_ {
             scope: self.clone(),
-            id: self.0.schema.0.as_ref().borrow_mut().take_id(id),
+            id: self.take_id(id),
             type_name: enum_name.clone(),
             serial_before: self.0.serial_root.0.mut_.borrow().children.last().map(|x| x.clone().into()),
             serial: serial,
@@ -551,7 +591,7 @@ impl Object {
         let id = id.into();
         let serial: Node = serial.into();
         let rust = NodeConst(Gc::new(NodeConst_ {
-            id: self.0.schema.0.as_ref().borrow_mut().take_id(id),
+            id: self.take_id(id),
             expect: value,
             mut_: GcCell::new(NodeConstMut_ { serial: None }),
         }));
@@ -564,12 +604,12 @@ impl Object {
         );
     }
 
-    pub fn rust_field(&self, id: impl Into<String>, serial: impl Into<Node>, name: impl Into<String>) {
-        let id = id.into();
+    pub fn rust_field(&self, name: impl Into<String>, serial: impl Into<Node>) {
+        let name = name.into();
         let serial = serial.into();
         let rust = NodeRustField(Gc::new(NodeRustField_ {
-            id: self.0.schema.0.as_ref().borrow_mut().take_id(id),
-            field_name: name.into(),
+            id: self.take_id(name.clone()),
+            field_name: name,
             obj: self.0.rust_root.clone(),
             mut_: GcCell::new(crate::node_rust::NodeRustFieldMut_ { serial: None }),
         }));
@@ -599,7 +639,7 @@ impl Enum {
             tag: tag,
             element: element.clone(),
         });
-        element.0.mut_.borrow_mut().nesting_parent = NestingParent::Enum(NestingParentEnum {
+        element.0.mut_.borrow_mut().escapable_parent = EscapableParent::Enum(EscapableParentEnum {
             enum_: self.enum_.clone(),
             variant_name: variant_name,
             parent: self.obj.clone(),
