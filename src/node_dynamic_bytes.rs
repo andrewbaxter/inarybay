@@ -5,7 +5,10 @@ use gc::{
     GcCell,
 };
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{
+    quote,
+    ToTokens,
+};
 use crate::{
     node::{
         Node,
@@ -23,6 +26,8 @@ use crate::{
     node_int::NodeInt,
     object::Object,
     derive_forward_node_methods,
+    schema::GenerateContext,
+    node_fixed_range::generate_read_bytes,
 };
 
 #[derive(Trace, Finalize)]
@@ -49,28 +54,32 @@ impl NodeMethods for NodeDynamicBytes_ {
         return out;
     }
 
-    fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
         let source_ident = self.serial.0.serial_root.0.id.ident();
         let source_len_ident = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id.ident();
         let dest_ident = self.id.ident();
-        return quote!{
-            let mut #dest_ident = #source_ident.read_len(#source_len_ident) ?;
-        };
+        return generate_read_bytes(
+            gen_ctx,
+            &self.id,
+            &source_ident,
+            &dest_ident,
+            source_len_ident.into_token_stream(),
+        );
     }
 
     fn gather_write_deps(&self) -> Vec<Node> {
         return self.mut_.borrow().rust.dep();
     }
 
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let source_ident = self.id.ident();
-        let dest_ident = self.serial.0.serial_root.0.id.ident();
+        let dest_ident = self.serial.0.id.ident();
         let serial_len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.clone();
         let dest_len_ident = serial_len.id.ident();
         let dest_len_type = &serial_len.rust_type;
         return quote!{
             let #dest_len_ident = #source_ident.len() as #dest_len_type;
-            let #dest_ident = #source_ident.as_bytes();
+            let #dest_ident = #source_ident.as_slice();
         };
     }
 

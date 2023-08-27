@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-inarybay = { version = "0.1.0", path = ".." }
+inarybay = { version = "*", path = ".." }
 genemichaels = "0.1.21"
 quote = "1.0.33"

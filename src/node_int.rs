@@ -23,6 +23,7 @@ use crate::{
     },
     object::Object,
     derive_forward_node_methods,
+    schema::GenerateContext,
 };
 use quote::{
     quote,
@@ -60,7 +61,7 @@ pub(crate) struct NodeInt_ {
     pub(crate) endian: Endian,
     pub(crate) mut_: GcCell<NodeIntMut_>,
     // Computed
-    pub(crate) rust_bits: usize,
+    pub(crate) rust_bytes: usize,
     #[unsafe_ignore_trace]
     pub(crate) rust_type: Ident,
 }
@@ -70,24 +71,27 @@ impl NodeMethods for NodeInt_ {
         return self.mut_.borrow().serial.dep();
     }
 
-    fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let dest_ident = self.id.ident();
         let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
-        if self.len.bits <= 8 {
+        if self.len.bytes == 0 {
             if self.start.bits + self.len.bits > 8 {
                 panic!();
             }
             let serial_start = self.start.bytes;
+            let mut out = quote!(#source_ident[#serial_start]);
             let serial_offset = self.start.bits;
+            if serial_offset > 0 {
+                out = quote!((#out >> #serial_offset));
+            }
             let mut serial_mask = 0u8;
             for _ in 0 .. self.len.bits {
                 serial_mask = serial_mask * 2 + 1;
             }
+            out = quote!(#out & #serial_mask);
             let rust_type = &self.rust_type;
             return quote!{
-                let #dest_ident = #rust_type:: from_ne_bytes(
-                    [((#source_ident[#serial_start] >> #serial_offset) & #serial_mask)]
-                );
+                let #dest_ident = #rust_type:: from_ne_bytes([#out]);
             };
         } else {
             if self.start.bits != 0 {
@@ -97,7 +101,7 @@ impl NodeMethods for NodeInt_ {
                 panic!();
             }
             let serial_start = self.start.bytes;
-            let serial_bytes = self.len.bits / 8;
+            let serial_bytes = self.len.bytes;
             let rust_type = &self.rust_type;
             let method;
             match self.endian {
@@ -105,8 +109,8 @@ impl NodeMethods for NodeInt_ {
                 Endian::Little => method = format_ident!("from_le_bytes"),
             };
             let mut out = quote!(#source_ident[#serial_start..#serial_start + #serial_bytes]);
-            if self.len.bits != self.rust_bits {
-                let rust_bytes = self.rust_bits / 8;
+            if self.len.bytes != self.rust_bytes {
+                let rust_bytes = self.rust_bytes;
                 match self.endian {
                     Endian::Big => {
                         let endian_pad_offset = rust_bytes - serial_bytes;
@@ -125,7 +129,7 @@ impl NodeMethods for NodeInt_ {
                                 0u8;
                                 #rust_bytes
                             ];
-                            temp.copy_from_slice(& #out);
+                            temp[0..#serial_bytes].copy_from_slice(& #out);
                             temp
                         });
                     },
@@ -134,7 +138,7 @@ impl NodeMethods for NodeInt_ {
                 out = quote!(#out.try_into().unwrap());
             }
             return quote!{
-                let dest_ident = #rust_type:: #method(#out);
+                let #dest_ident = #rust_type:: #method(#out);
             };
         }
     }
@@ -143,24 +147,25 @@ impl NodeMethods for NodeInt_ {
         return self.mut_.borrow().rust.dep();
     }
 
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let source_ident = self.id.ident();
         let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
-        if self.len.bits <= 8 {
+        if self.len.bytes == 0 {
             if self.start.bits + self.len.bits > 8 {
                 panic!();
             }
-            let serial_start = self.start.bytes;
-            let serial_offset = self.start.bits;
             let mut serial_mask = 0u8;
             for _ in 0 .. self.len.bits {
                 serial_mask = serial_mask * 2 + 1;
             }
-            let rust_type = &self.rust_type;
+            let mut out = quote!(u8:: from_ne_bytes([* #source_ident]) & #serial_mask);
+            let serial_offset = self.start.bits;
+            if serial_offset > 0 {
+                out = quote!(#out << #serial_offset);
+            }
+            let serial_start = self.start.bytes;
             return quote!{
-                #dest_ident[
-                    #serial_start
-                ] |=(#rust_type:: from_ne_bytes([#source_ident]) & #serial_mask) << #serial_offset;
+                #dest_ident[#serial_start] |= #out;
             };
         } else {
             if self.start.bits != 0 {
@@ -170,15 +175,15 @@ impl NodeMethods for NodeInt_ {
                 panic!();
             }
             let serial_start = self.start.bytes;
-            let serial_bytes = self.len.bits / 8;
+            let serial_bytes = self.len.bytes;
             let method;
             match self.endian {
                 Endian::Big => method = format_ident!("to_be_bytes"),
                 Endian::Little => method = format_ident!("to_le_bytes"),
             };
             let mut out = quote!(#source_ident.#method());
-            if self.len.bits != self.rust_bits {
-                let rust_bytes = self.rust_bits / 8;
+            if self.len.bytes != self.rust_bytes {
+                let rust_bytes = self.rust_bytes;
                 match self.endian {
                     Endian::Big => {
                         let endian_pad_offset = rust_bytes - serial_bytes;
@@ -216,7 +221,7 @@ impl NodeMethods for NodeInt_ {
 
 impl NodeInt {
     pub(crate) fn new(args: NodeIntArgs) -> NodeInt {
-        let mut rust_bits = args.len.bits.next_power_of_two();
+        let mut rust_bits = (args.len.bytes * 8 + args.len.bits).next_power_of_two();
         if rust_bits < 8 {
             rust_bits = 8;
         }
@@ -237,7 +242,7 @@ impl NodeInt {
             signed: args.signed,
             endian: args.endian,
             rust_type: format_ident!("{}{}", sign_prefix, rust_bits),
-            rust_bits: rust_bits,
+            rust_bytes: rust_bits / 8,
             mut_: GcCell::new(NodeIntMut_ {
                 serial: None,
                 rust: None,

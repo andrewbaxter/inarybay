@@ -13,6 +13,7 @@ use gc::{
 };
 use proc_macro2::{
     TokenStream,
+    Ident,
 };
 use quote::{
     quote,
@@ -46,6 +47,75 @@ impl Schema_ { }
 #[derive(Clone, Trace, Finalize)]
 pub struct Schema(pub(crate) Gc<GcCell<Schema_>>);
 
+pub struct GenerateConfig {
+    /// Generate read methods (async or otherwise)
+    pub read: bool,
+    /// Generate write methods (async or otherwise)
+    pub write: bool,
+    /// Generate sync (blocking, non-async) methods
+    pub sync_: bool,
+    /// Generate async (non-blocking) methods
+    pub async_: bool,
+    /// Avoid excessive heap allocation... mostly just errors, not quite heap-free at
+    /// this time I'm afraid
+    pub low_heap: bool,
+}
+
+pub(crate) struct GenerateContext {
+    pub(crate) low_heap: bool,
+    pub(crate) async_: bool,
+}
+
+impl GenerateContext {
+    pub(crate) fn read_err_type(&self) -> TokenStream {
+        match self.low_heap {
+            true => return quote!(& 'static str),
+            false => return quote!(inarybay_runtime::error::ReadError),
+        }
+    }
+
+    pub(crate) fn do_raise_err(&self, ident: &Ident, node: &str) -> TokenStream {
+        match self.low_heap {
+            true => {
+                let text = format!("Error parsing in node {}", node);
+                return quote!{
+                    let #ident = #ident.errorize(#text) ?;
+                };
+            },
+            false => {
+                return quote!{
+                    let #ident = #ident.errorize(#node) ?;
+                };
+            },
+        }
+    }
+
+    pub(crate) fn new_read_err(&self, node: &str, text: TokenStream) -> TokenStream {
+        match self.low_heap {
+            true => {
+                let text = format!("Error parsing, in node {}", node);
+                return quote!(#text);
+            },
+            false => {
+                let err_type = self.read_err_type();
+                return quote!(#err_type {
+                    node: #node,
+                    inner: #text
+                });
+            },
+        }
+    }
+
+    pub(crate) fn do_await(&self, ident: &Ident) -> TokenStream {
+        match self.async_ {
+            true => return quote!{
+                #ident = #ident.await;
+            },
+            false => return quote!(),
+        }
+    }
+}
+
 impl Schema {
     pub fn new() -> Schema {
         return Schema(Gc::new(GcCell::new(Schema_ {
@@ -60,7 +130,7 @@ impl Schema {
     }
 
     /// Generate code for the described schema.
-    pub fn generate(&self, read: bool, write: bool) -> TokenStream {
+    pub fn generate(&self, config: GenerateConfig) -> TokenStream {
         let self2 = self.0.borrow();
 
         // Generate types
@@ -106,7 +176,10 @@ impl Schema {
                     #var_ident(#var_type_ident),
                 });
             }
+            let attrs = &first.0.mut_.borrow().type_attrs;
             code.push(quote!{
+                #(#attrs) * 
+                //. .
                 pub enum #type_ident {
                     #(#variants) *
                 }
@@ -221,13 +294,7 @@ impl Schema {
             for f in &first.0.rust_root.0.mut_.borrow().fields {
                 let field_ident = &f.0.field_name.ident();
                 let field_type = match &f.0.mut_.borrow().serial.as_ref().unwrap().primary.0 {
-                    Node_::FixedBytes(n) => {
-                        let len = n.0.len;
-                        quote!([
-                            u8;
-                            #len
-                        ])
-                    },
+                    Node_::FixedBytes(n) => n.0.rust_type.clone(),
                     Node_::Int(n) => n.0.rust_type.to_token_stream(),
                     Node_::DynamicBytes(_) => quote!(std:: vec:: Vec < u8 >),
                     Node_::DynamicArray(n) => {
@@ -241,7 +308,10 @@ impl Schema {
                     pub #field_ident: #field_type,
                 });
             }
+            let attrs = &first.0.mut_.borrow().type_attrs;
             code.push(quote!{
+                #(#attrs) * 
+                //. .
                 pub struct #type_ident {
                     #(#fields) *
                 }
@@ -255,34 +325,105 @@ impl Schema {
                 let obj_ident = root_obj.id.ident();
                 let serial_ident = root.0.serial_root.0.id.ident();
                 let mut methods = vec![];
-                if read {
-                    let code = generate_read(&root.0);
-                    methods.push(quote!{
-                        pub fn read(#serial_ident: impl std:: io:: Read) -> Self {
-                            #code return #obj_ident;
-                        }
-                    });
+                if config.read {
+                    if config.sync_ {
+                        let gen_ctx = GenerateContext {
+                            low_heap: config.low_heap,
+                            async_: false,
+                        };
+                        let code = generate_read(&gen_ctx, &root.0);
+                        let err_ident = gen_ctx.read_err_type();
+                        methods.push(quote!{
+                            pub fn read(#serial_ident:& mut dyn std:: io:: Read) -> Result < Self,
+                            #err_ident > {
+                                #code return Ok(#obj_ident);
+                            }
+                        });
+                    }
+                    if config.async_ {
+                        let gen_ctx = GenerateContext {
+                            low_heap: config.low_heap,
+                            async_: true,
+                        };
+                        let code = generate_read(&gen_ctx, &root.0);
+                        let err_ident = gen_ctx.read_err_type();
+                        methods.push(quote!{
+                            pub async fn read_async(
+                                #serial_ident:& mut dyn tokio:: io:: AsyncReadExt
+                            ) -> Result < Self,
+                            #err_ident > {
+                                #code return Ok(#obj_ident);
+                            }
+                        });
+                    }
                 }
-                if write {
-                    let code = generate_write(&root.0);
-                    methods.push(quote!{
-                        pub fn write(&self, #serial_ident: impl std:: io:: Write) {
-                            let #obj_ident = self;
-                            #code
-                        }
-                    });
+                if config.write {
+                    if config.sync_ {
+                        let gen_ctx = GenerateContext {
+                            low_heap: config.low_heap,
+                            async_: false,
+                        };
+                        let code = generate_write(&gen_ctx, &root.0);
+                        methods.push(quote!{
+                            pub fn write(&self, #serial_ident:& mut dyn std:: io:: Write) -> std:: io:: Result <() > {
+                                let #obj_ident = self;
+                                #code 
+                                //. .
+                                return Ok(());
+                            }
+                        });
+                    }
+                    if config.async_ {
+                        let gen_ctx = GenerateContext {
+                            low_heap: config.low_heap,
+                            async_: true,
+                        };
+                        let code = generate_write(&gen_ctx, &root.0);
+                        methods.push(quote!{
+                            pub async fn write_async(
+                                &self,
+                                mut #serial_ident:& mut dyn tokio:: io:: AsyncWriteExt
+                            ) -> std:: io:: Result <() > {
+                                let #obj_ident = self;
+                                #code 
+                                //. .
+                                return Ok(());
+                            }
+                        });
+                    }
                 }
                 let type_ident = &root_obj.type_name.ident();
-                code.push(quote!(impl #type_ident {
-                    #(#methods) *
-                }));
+                code.push(quote!{
+                    impl #type_ident {
+                        #(#methods) *
+                    }
+                });
             }
         }
-        return quote!(#(#code) *);
+        let imports;
+        match config.low_heap {
+            true => {
+                imports = quote!{
+                    use inarybay_runtime::lowheap_error::ReadErrCtx;
+                };
+            },
+            false => {
+                imports = quote!{
+                    use inarybay_runtime::error::ReadErrCtx;
+                };
+            },
+        }
+        return quote!{
+            #![allow(non_snake_case, dropping_copy_types, dropping_references, unused_mut, unused_variables)] 
+            //. .
+            #imports 
+            //. .
+            #(#code) *
+        };
     }
 }
 
-pub(crate) fn generate_read(obj: &Object_) -> TokenStream {
+pub(crate) fn generate_read(gen_ctx: &GenerateContext, obj: &Object_) -> TokenStream {
     let mut seen = HashSet::new();
     let mut stack: Vec<(Node, bool)> = vec![];
     stack.push((obj.rust_root.clone().into(), true));
@@ -303,13 +444,13 @@ pub(crate) fn generate_read(obj: &Object_) -> TokenStream {
             }
         } else {
             // Post-deps, now do main processing
-            code.push(node.0.generate_read());
+            code.push(node.0.generate_read(gen_ctx));
         }
     }
     return quote!(#(#code) *);
 }
 
-pub(crate) fn generate_write(obj: &Object_) -> TokenStream {
+pub(crate) fn generate_write(gen_ctx: &GenerateContext, obj: &Object_) -> TokenStream {
     // Read from own id ident, write to serial-side id idents (except serial
     // segment/serial root)
     let mut seen = HashSet::new();
@@ -337,7 +478,7 @@ pub(crate) fn generate_write(obj: &Object_) -> TokenStream {
             }
         } else {
             // Post-deps, now do main processing
-            code.push(node.0.generate_write());
+            code.push(node.0.generate_write(gen_ctx));
         }
     }
     return quote!(#(#code) *);

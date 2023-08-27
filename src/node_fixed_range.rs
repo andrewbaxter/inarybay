@@ -5,8 +5,14 @@ use gc::{
     GcCell,
     Gc,
 };
-use proc_macro2::TokenStream;
-use quote::quote;
+use proc_macro2::{
+    TokenStream,
+    Ident,
+};
+use quote::{
+    quote,
+    ToTokens,
+};
 use crate::{
     node::{
         Node,
@@ -21,6 +27,7 @@ use crate::{
     },
     node_serial::NodeSerialSegment,
     derive_forward_node_methods,
+    schema::GenerateContext,
 };
 
 #[derive(Trace, Finalize)]
@@ -39,6 +46,29 @@ pub(crate) struct NodeFixedRange_ {
     pub(crate) mut_: GcCell<NodeFixedRangeMut_>,
 }
 
+pub(crate) fn generate_read_bytes(
+    gen_ctx: &GenerateContext,
+    node: &str,
+    serial_ident: &Ident,
+    ident: &Ident,
+    len: TokenStream,
+) -> TokenStream {
+    let res_ident = "res__".ident();
+    let do_await = gen_ctx.do_await(&res_ident);
+    let raise_err = gen_ctx.do_raise_err(&res_ident, node);
+    return quote!{
+        let mut #ident = std:: vec:: Vec:: new();
+        #ident.resize(#len as usize, 0u8);
+        let #res_ident = #serial_ident.read_exact(#ident.as_mut_slice());
+        //. .
+        #do_await 
+        //. .
+        #raise_err 
+        //. .
+        drop(#res_ident);
+    };
+}
+
 impl NodeMethods for NodeFixedRange_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         let mut out = vec![];
@@ -47,13 +77,11 @@ impl NodeMethods for NodeFixedRange_ {
         return out;
     }
 
-    fn generate_read(&self) -> TokenStream {
-        let serial_ident = self.serial.0.id.ident();
+    fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
+        let serial_ident = self.serial.0.serial_root.0.id.ident();
         let ident = self.id.ident();
         let bytes = self.len_bytes;
-        return quote!{
-            let mut #ident = #serial_ident.read_len(#bytes) ?;
-        };
+        return generate_read_bytes(gen_ctx, &self.id, &serial_ident, &ident, bytes.to_token_stream());
     }
 
     fn gather_write_deps(&self) -> Vec<Node> {
@@ -62,7 +90,7 @@ impl NodeMethods for NodeFixedRange_ {
         return out;
     }
 
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let dest_ident = self.serial.0.id.ident();
         let source_ident = self.id.ident();
         return quote!{

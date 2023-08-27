@@ -19,6 +19,7 @@ use crate::{
     },
     object::Object,
     derive_forward_node_methods,
+    schema::GenerateContext,
 };
 
 #[derive(Trace, Finalize)]
@@ -39,7 +40,7 @@ impl NodeMethods for NodeRustField_ {
         return self.mut_.borrow().serial.dep();
     }
 
-    fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         return quote!();
     }
 
@@ -47,12 +48,12 @@ impl NodeMethods for NodeRustField_ {
         return self.obj.dep();
     }
 
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let obj_ident = self.obj.0.id.ident();
         let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
         let field_ident = self.field_name.ident();
         return quote!{
-            let #dest_ident = #obj_ident.#field_ident;
+            let #dest_ident =& #obj_ident.#field_ident;
         };
     }
 
@@ -97,7 +98,7 @@ impl NodeMethods for NodeRustObj_ {
         return self.mut_.borrow().fields.dep();
     }
 
-    fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let type_ident = &self.type_name.ident();
         let dest_ident = self.id.ident();
         let mut fields = vec![];
@@ -109,7 +110,7 @@ impl NodeMethods for NodeRustObj_ {
             });
         }
         return quote!{
-            #dest_ident = #type_ident {
+            let #dest_ident = #type_ident {
                 #(#fields) *
             };
         };
@@ -119,7 +120,7 @@ impl NodeMethods for NodeRustObj_ {
         return vec![];
     }
 
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         return quote!();
     }
 

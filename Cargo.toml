@@ -14,4 +14,4 @@ quote = "1.0.32"
 samevariant = "0.0.1"
 
 [workspace]
-members = ["crate_tests", "crate_tests_build"]
+members = ["runtime", "crate_tests", "crate_tests_build"]

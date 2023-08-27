@@ -19,6 +19,7 @@ use crate::{
     },
     object::Object,
     derive_forward_node_methods,
+    schema::GenerateContext,
 };
 
 #[derive(Trace, Finalize)]
@@ -39,12 +40,17 @@ impl NodeMethods for NodeConst_ {
         return self.mut_.borrow().serial.dep();
     }
 
-    fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
         let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
         let expect = &self.expect;
+        let to_err =
+            gen_ctx.new_read_err(
+                &self.id,
+                quote!(format!("Expected magic value {:?} but got {:?}", #expect, #source_ident)),
+            );
         return quote!{
             if #source_ident != #expect {
-                return Err("Magic mismatch at TODO");
+                return Err(#to_err);
             }
         };
     }
@@ -53,7 +59,7 @@ impl NodeMethods for NodeConst_ {
         return vec![];
     }
 
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
         let expect = &self.expect;
         return quote!{

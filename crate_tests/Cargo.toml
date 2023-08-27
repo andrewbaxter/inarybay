@@ -3,5 +3,8 @@ name = "crate_tests"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+inarybay-runtime = { version = "*", path = "../runtime" }
+
 [build-dependencies]
-crate_tests_build = { version = "0.1.0", path = "../crate_tests_build" }
+crate_tests_build = { version = "*", path = "../crate_tests_build" }

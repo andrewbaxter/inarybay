@@ -18,11 +18,13 @@ use crate::{
     },
     object::Object,
     derive_forward_node_methods,
+    schema::GenerateContext,
 };
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeSerialMut_ {
-    pub(crate) children: Vec<NodeSerialSegment>,
+    pub(crate) segments: Vec<NodeSerialSegment>,
+    pub(crate) sub_segments: Vec<Node>,
     pub(crate) lifted_serial_deps: BTreeMap<String, Node>,
 }
 
@@ -37,18 +39,18 @@ impl NodeMethods for NodeSerial_ {
         return vec![];
     }
 
-    fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         return quote!();
     }
 
     fn gather_write_deps(&self) -> Vec<Node> {
         let mut out = vec![];
-        out.extend(self.mut_.borrow().children.dep());
+        out.extend(self.mut_.borrow().segments.dep());
         out.extend(self.mut_.borrow().lifted_serial_deps.values().cloned());
         return out;
     }
 
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         return quote!();
     }
 
@@ -98,7 +100,7 @@ impl NodeMethods for NodeSerialSegment_ {
         return out;
     }
 
-    fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         return quote!();
     }
 
@@ -109,11 +111,18 @@ impl NodeMethods for NodeSerialSegment_ {
         return out;
     }
 
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
         let serial_ident = self.serial_root.0.id.ident();
         let ident = self.id.ident();
+        let res_ident = "res__".ident();
+        let do_await = gen_ctx.do_await(&res_ident);
         return quote!{
-            #serial_ident.write(& #ident);
+            let #res_ident = #serial_ident.write(& #ident);
+            //. .
+            #do_await 
+            //. .
+            let #res_ident = #res_ident ?;
+            drop(#res_ident);
             drop(#ident);
         }
     }

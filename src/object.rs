@@ -8,6 +8,7 @@ use std::{
         RefCell,
     },
     rc::Rc,
+    vec,
 };
 use gc::{
     Finalize,
@@ -103,6 +104,8 @@ pub(crate) struct ObjectMut_ {
     pub(crate) escapable_parent: EscapableParent,
     pub(crate) rust_const_roots: Vec<NodeConst>,
     pub(crate) has_external_deps: bool,
+    #[unsafe_ignore_trace]
+    pub(crate) type_attrs: Vec<TokenStream>,
     seen_ids: HashSet<String>,
 }
 
@@ -161,7 +164,8 @@ impl Object {
         let serial_root = NodeSerial(Gc::new(NodeSerial_ {
             id: serial_id.clone(),
             mut_: GcCell::new(NodeSerialMut_ {
-                children: vec![],
+                segments: vec![],
+                sub_segments: vec![],
                 lifted_serial_deps: BTreeMap::new(),
             }),
         }));
@@ -179,6 +183,7 @@ impl Object {
                 escapable_parent: EscapableParent::None,
                 rust_const_roots: vec![],
                 has_external_deps: false,
+                type_attrs: vec![],
                 seen_ids: HashSet::new(),
             }),
         }));
@@ -187,6 +192,10 @@ impl Object {
         out.take_id(rust_id);
         schema.0.as_ref().borrow_mut().objects.entry(name).or_insert_with(Vec::new).push(out.clone());
         return out;
+    }
+
+    pub fn add_type_attrs(&self, attrs: TokenStream) {
+        self.0.mut_.borrow_mut().type_attrs.push(attrs);
     }
 
     fn take_id(&self, id: String) -> String {
@@ -218,10 +227,10 @@ impl Object {
             scope: self.clone(),
             id: self.take_id(format!("{}__serial_seg", id)),
             serial_root: self.0.serial_root.clone().into(),
-            serial_before: self.0.serial_root.0.mut_.borrow().children.last().cloned(),
+            serial_before: self.0.serial_root.0.mut_.borrow().segments.last().cloned(),
             mut_: GcCell::new(NodeSerialSegmentMut_ { rust: None }),
         }));
-        self.0.serial_root.0.mut_.borrow_mut().children.push(out.clone());
+        self.0.serial_root.0.mut_.borrow_mut().segments.push(out.clone());
         return out;
     }
 
@@ -232,12 +241,13 @@ impl Object {
         let serial = NodeFixedRange(Gc::new(NodeFixedRange_ {
             scope: self.clone(),
             id: node_id,
-            serial_before: self.0.serial_root.0.mut_.borrow().children.last().map(|x| x.clone().into()),
+            serial_before: self.0.serial_root.0.mut_.borrow().sub_segments.last().cloned(),
             serial: seg.clone(),
             len_bytes: bytes,
             mut_: GcCell::new(NodeFixedRangeMut_ { rust: BTreeMap::new() }),
         }));
         seg.0.mut_.borrow_mut().rust = Some(serial.clone().into());
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(serial.clone().into());
         return Range(Gc::new(GcCell::new(Range_ {
             serial: serial,
             alloc: Rc::new(RefCell::new(RangeAlloc::Unset(RangeAllocSingle {
@@ -409,7 +419,7 @@ impl Object {
                     SomeEscapableParent::Enum(level) => {
                         if i == 0 {
                             // 1A
-                            serial.set_rust(rust.clone());
+                            serial.set_rust(level.enum_.clone().into());
 
                             // 1B
                             level.enum_.0.mut_.borrow_mut().external_deps.insert(serial.id(), serial.clone().into());
@@ -434,6 +444,9 @@ impl Object {
                     },
                 }
             }
+
+            // 4
+            rust.0.scope().0.mut_.borrow_mut().has_external_deps = true;
 
             // 3A
             self.0.serial_root.0.mut_.borrow_mut().lifted_serial_deps.insert(rust.id(), rust.clone());
@@ -504,13 +517,14 @@ impl Object {
         let rust = NodeDynamicBytes(Gc::new(NodeDynamicBytes_ {
             scope: self.clone(),
             id: self.take_id(id),
-            serial_before: self.0.serial_root.0.mut_.borrow().children.last().map(|x| x.clone().into()),
+            serial_before: self.0.serial_root.0.mut_.borrow().sub_segments.last().cloned(),
             serial: serial,
             mut_: GcCell::new(NodeDynamicBytesMut_ {
                 serial_len: None,
                 rust: None,
             }),
         }));
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(rust.clone().into());
         self.lift_connect(
             &self.get_ancestry_to(&len),
             &len,
@@ -533,7 +547,7 @@ impl Object {
         let rust = NodeDynamicArray(Gc::new(NodeDynamicArray_ {
             scope: self.clone(),
             id: self.take_id(id),
-            serial_before: self.0.serial_root.0.mut_.borrow().children.last().map(|x| x.clone().into()),
+            serial_before: self.0.serial_root.0.mut_.borrow().sub_segments.last().cloned(),
             serial: serial,
             element: element.clone(),
             mut_: GcCell::new(NodeDynamicArrayMut_ {
@@ -541,6 +555,7 @@ impl Object {
                 rust: None,
             }),
         }));
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(rust.clone().into());
         self.lift_connect(
             &self.get_ancestry_to(&len),
             &len,
@@ -564,15 +579,17 @@ impl Object {
             scope: self.clone(),
             id: self.take_id(id),
             type_name: enum_name.clone(),
-            serial_before: self.0.serial_root.0.mut_.borrow().children.last().map(|x| x.clone().into()),
+            serial_before: self.0.serial_root.0.mut_.borrow().sub_segments.last().cloned(),
             serial: serial,
             mut_: GcCell::new(crate::node_enum::NodeEnumMut_ {
                 serial_tag: None,
                 variants: vec![],
                 rust: None,
                 external_deps: BTreeMap::new(),
+                type_attrs: vec![],
             }),
         }));
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(rust.clone().into());
         self.0.schema.0.as_ref().borrow_mut().enums.entry(enum_name).or_insert_with(Vec::new).push(rust.clone());
         self.lift_connect(
             &self.get_ancestry_to(&tag),
@@ -624,6 +641,10 @@ impl Object {
 }
 
 impl Enum {
+    pub fn add_type_attrs(&self, attrs: TokenStream) {
+        self.enum_.0.mut_.borrow_mut().type_attrs.push(attrs);
+    }
+
     pub fn variant(
         &self,
         id: impl Into<String>,

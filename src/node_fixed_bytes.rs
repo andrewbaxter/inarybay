@@ -21,6 +21,7 @@ use crate::{
     },
     object::Object,
     derive_forward_node_methods,
+    schema::GenerateContext,
 };
 use quote::{
     quote,
@@ -45,6 +46,8 @@ pub(crate) struct NodeFixedBytes_ {
     pub(crate) id: String,
     pub(crate) start: usize,
     pub(crate) len: usize,
+    #[unsafe_ignore_trace]
+    pub(crate) rust_type: TokenStream,
     pub(crate) mut_: GcCell<NodeFixedBytesMut_>,
 }
 
@@ -53,13 +56,16 @@ impl NodeMethods for NodeFixedBytes_ {
         return self.mut_.borrow().serial.dep();
     }
 
-    fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let dest_ident = self.id.ident();
         let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
         let serial_start = self.start;
         let serial_len = self.len;
+        let rust_type_ident = &self.rust_type;
         return quote!{
-            let #dest_ident = #source_ident[#serial_start..#serial_start + #serial_len].to_vec();
+            let #dest_ident: #rust_type_ident = #source_ident[
+                #serial_start..#serial_start + #serial_len
+            ].try_into().unwrap();
         };
     }
 
@@ -67,16 +73,13 @@ impl NodeMethods for NodeFixedBytes_ {
         return self.mut_.borrow().rust.dep();
     }
 
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let source_ident = self.id.ident();
         let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
         let serial_start = self.start;
         let serial_bytes = self.len;
         return quote!{
-            if #source_ident.len() != #serial_bytes {
-                return Err("TODO wrong len");
-            }
-            #dest_ident[#serial_start..#serial_start + #serial_bytes].copy_from_slice(& #source_ident);
+            #dest_ident[#serial_start..#serial_start + #serial_bytes].copy_from_slice(#source_ident);
         };
     }
 
@@ -106,6 +109,13 @@ impl NodeFixedBytes {
             id: args.id,
             start: args.start,
             len: args.len,
+            rust_type: {
+                let len = args.len;
+                quote!([
+                    u8;
+                    #len
+                ])
+            },
             mut_: GcCell::new(NodeFixedBytesMut_ {
                 serial: None,
                 rust: None,

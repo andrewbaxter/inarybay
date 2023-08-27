@@ -23,14 +23,15 @@ use crate::{
         Object,
     },
     node_fixed_bytes::NodeFixedBytes,
+    schema::GenerateContext,
 };
 
 #[enum_dispatch]
 pub(crate) trait NodeMethods {
     fn gather_read_deps(&self) -> Vec<Node>;
-    fn generate_read(&self) -> TokenStream;
+    fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream;
     fn gather_write_deps(&self) -> Vec<Node>;
-    fn generate_write(&self) -> TokenStream;
+    fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream;
     fn set_rust(&self, rust: Node);
     fn scope(&self) -> Object;
     fn id(&self) -> String;
@@ -44,16 +45,16 @@ macro_rules! derive_forward_node_methods{
                 return self.0.gather_read_deps();
             }
 
-            fn generate_read(&self) -> TokenStream {
-                return self.0.generate_read();
+            fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
+                return self.0.generate_read(gen_ctx);
             }
 
             fn gather_write_deps(&self) -> Vec<Node> {
                 return self.0.gather_write_deps();
             }
 
-            fn generate_write(&self) -> TokenStream {
-                return self.0.generate_write();
+            fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
+                return self.0.generate_write(gen_ctx);
             }
 
             fn set_rust(&self, rust: Node) {
@@ -107,19 +108,19 @@ impl NodeMethods for Node_ {
     }
 
     #[inline]
-    fn generate_read(&self) -> TokenStream {
+    fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
         match self {
-            Node_::Serial(inner) => NodeMethods::generate_read(inner),
-            Node_::SerialSegment(inner) => NodeMethods::generate_read(inner),
-            Node_::FixedRange(inner) => NodeMethods::generate_read(inner),
-            Node_::FixedBytes(inner) => NodeMethods::generate_read(inner),
-            Node_::Int(inner) => NodeMethods::generate_read(inner),
-            Node_::DynamicBytes(inner) => NodeMethods::generate_read(inner),
-            Node_::DynamicArray(inner) => NodeMethods::generate_read(inner),
-            Node_::Enum(inner) => NodeMethods::generate_read(inner),
-            Node_::Const(inner) => NodeMethods::generate_read(inner),
-            Node_::RustField(inner) => NodeMethods::generate_read(inner),
-            Node_::RustObj(inner) => NodeMethods::generate_read(inner),
+            Node_::Serial(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::SerialSegment(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::FixedRange(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::FixedBytes(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::Int(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::DynamicBytes(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::DynamicArray(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::Enum(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::Const(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::RustField(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::RustObj(inner) => NodeMethods::generate_read(inner, gen_ctx),
         }
     }
 
@@ -141,19 +142,19 @@ impl NodeMethods for Node_ {
     }
 
     #[inline]
-    fn generate_write(&self) -> TokenStream {
+    fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
         match self {
-            Node_::Serial(inner) => NodeMethods::generate_write(inner),
-            Node_::SerialSegment(inner) => NodeMethods::generate_write(inner),
-            Node_::FixedRange(inner) => NodeMethods::generate_write(inner),
-            Node_::FixedBytes(inner) => NodeMethods::generate_write(inner),
-            Node_::Int(inner) => NodeMethods::generate_write(inner),
-            Node_::DynamicBytes(inner) => NodeMethods::generate_write(inner),
-            Node_::DynamicArray(inner) => NodeMethods::generate_write(inner),
-            Node_::Enum(inner) => NodeMethods::generate_write(inner),
-            Node_::Const(inner) => NodeMethods::generate_write(inner),
-            Node_::RustField(inner) => NodeMethods::generate_write(inner),
-            Node_::RustObj(inner) => NodeMethods::generate_write(inner),
+            Node_::Serial(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::SerialSegment(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::FixedRange(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::FixedBytes(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::Int(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::DynamicBytes(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::DynamicArray(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::Enum(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::Const(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::RustField(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::RustObj(inner) => NodeMethods::generate_write(inner, gen_ctx),
         }
     }
 
@@ -253,16 +254,16 @@ impl NodeMethods for Node {
         return self.0.gather_read_deps();
     }
 
-    fn generate_read(&self) -> TokenStream {
-        return self.0.generate_read();
+    fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
+        return self.0.generate_read(gen_ctx);
     }
 
     fn gather_write_deps(&self) -> Vec<Node> {
         return self.0.gather_write_deps();
     }
 
-    fn generate_write(&self) -> TokenStream {
-        return self.0.generate_write();
+    fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
+        return self.0.generate_write(gen_ctx);
     }
 
     fn set_rust(&self, rust: Node) {
