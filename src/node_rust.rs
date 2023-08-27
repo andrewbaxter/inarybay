@@ -98,11 +98,11 @@ impl NodeMethods for NodeRustObj_ {
     }
 
     fn generate_read(&self) -> TokenStream {
-        let type_ident = &self.type_name;
+        let type_ident = &self.type_name.ident();
         let dest_ident = self.id.ident();
         let mut fields = vec![];
         for f in &self.mut_.borrow().fields {
-            let field_ident = &f.0.field_name;
+            let field_ident = &f.0.field_name.ident();
             let value_ident = f.0.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
             fields.push(quote!{
                 #field_ident: #value_ident,

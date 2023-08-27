@@ -294,6 +294,7 @@ impl Schema {
 pub(crate) fn generate_read(obj: &Object_) -> TokenStream {
     let mut seen = HashSet::new();
     let mut stack: Vec<(Node, bool)> = vec![];
+    stack.push((obj.rust_root.clone().into(), true));
     for c in &obj.mut_.borrow().rust_const_roots {
         stack.push((c.clone().into(), true));
     }

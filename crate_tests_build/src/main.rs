@@ -15,15 +15,17 @@ pub fn main() {
     let root = PathBuf::from_str(&env::var("CARGO_MANIFEST_DIR").unwrap()).unwrap();
     let src = root.join("src");
     let write = |name: &str, s: Schema| {
+        let out_path = src.join(format!("gen_{}.rs", name));
         let ts = s.generate(true, true).to_string();
-        let formatted = match genemichaels::format_str(&ts, &genemichaels::FormatConfig::default()) {
+        match genemichaels::format_str(&ts, &genemichaels::FormatConfig::default()) {
             Err(e) => {
-                eprintln!("{}", ts);
-                panic!("{}", e);
+                eprintln!("{}: {}", out_path.to_string_lossy(), e);
+                fs::write(out_path, ts.as_bytes()).unwrap();
             },
-            Ok(f) => f,
+            Ok(formatted) => {
+                fs::write(out_path, formatted.rendered.as_bytes()).unwrap();
+            },
         };
-        fs::write(src.join(format!("gen_{}.rs", name)), formatted.rendered.as_bytes()).unwrap();
     };
 
     // Fixed bytes
@@ -171,6 +173,6 @@ pub fn main() {
         let december = enum_builder.variant("zQG5ZEV9Z", "December", "December", quote!(1));
         december.rust_field("zFXRLSAHE", top.int("z4QM2N96U", external.clone(), Endian::Little, true), "f");
         top.rust_field("z9F5CKEP5", enum_, "august");
-        write("enum", s);
+        write("enum_external_deps", s);
     }
 }

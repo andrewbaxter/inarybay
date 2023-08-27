@@ -67,14 +67,14 @@ impl NodeMethods for NodeEnum_ {
     }
 
     fn generate_read(&self) -> TokenStream {
-        let type_ident = &self.type_name;
+        let type_ident = &self.type_name.ident();
         let source_ident = self.serial.0.serial_root.0.id.ident();
         let source_tag_ident = self.mut_.borrow().serial_tag.as_ref().unwrap().primary.id().ident();
         let dest_ident = self.id.ident();
         let mut var_code = vec![];
         for v in &self.mut_.borrow().variants {
             let tag = &v.tag;
-            let var_ident = &v.var_name;
+            let var_ident = &v.var_name.ident();
             let elem_ident = v.element.0.id.ident();
             let elem_code;
             if self.mut_.borrow().external_deps.is_empty() {
@@ -110,7 +110,7 @@ impl NodeMethods for NodeEnum_ {
     }
 
     fn generate_write(&self) -> TokenStream {
-        let enum_name = &self.type_name;
+        let enum_name = &self.type_name.ident();
         let source_ident = self.id.ident();
         let dest_tag_ident = self.mut_.borrow().serial_tag.as_ref().unwrap().primary.id().ident();
         let dest_ident = self.serial.0.id.ident();
@@ -127,7 +127,7 @@ impl NodeMethods for NodeEnum_ {
         }
         for v in &self.mut_.borrow().variants {
             let tag = &v.tag;
-            let variant_name = &v.var_name;
+            let variant_name = &v.var_name.ident();
             let elem_source_ident = v.element.0.rust_root.0.id.ident();
             let elem_dest_ident = v.element.0.serial_root.0.id.ident();
             let elem_code;
