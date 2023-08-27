@@ -1,16 +1,16 @@
 use gc::{
     Finalize,
     Trace,
+    GcCell,
+    Gc,
 };
 use proc_macro2::{
     TokenStream,
 };
 use crate::{
     util::{
-        S,
         ToIdent,
         LateInit,
-        new_s,
     },
     node_fixed_range::NodeFixedRange,
     node::{
@@ -18,7 +18,6 @@ use crate::{
         RedirectRef,
         NodeMethods,
         ToDep,
-        NodeMethods_,
     },
     object::Object,
     derive_forward_node_methods,
@@ -35,23 +34,28 @@ pub(crate) struct NodeFixedBytesArgs {
 }
 
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeFixedBytes_ {
-    pub(crate) scope: Object,
-    pub(crate) id: String,
+pub(crate) struct NodeFixedBytesMut_ {
     pub(crate) serial: LateInit<RedirectRef<NodeFixedRange, Node>>,
-    pub(crate) start: usize,
-    pub(crate) len: usize,
     pub(crate) rust: Option<Node>,
 }
 
-impl NodeMethods_ for NodeFixedBytes_ {
+#[derive(Trace, Finalize)]
+pub(crate) struct NodeFixedBytes_ {
+    pub(crate) scope: Object,
+    pub(crate) id: String,
+    pub(crate) start: usize,
+    pub(crate) len: usize,
+    pub(crate) mut_: GcCell<NodeFixedBytesMut_>,
+}
+
+impl NodeMethods for NodeFixedBytes_ {
     fn gather_read_deps(&self) -> Vec<Node> {
-        return self.serial.dep();
+        return self.mut_.borrow().serial.dep();
     }
 
     fn generate_read(&self) -> TokenStream {
         let dest_ident = self.id.ident();
-        let source_ident = self.serial.as_ref().unwrap().primary.0.borrow().id.ident();
+        let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
         let serial_start = self.start;
         let serial_len = self.len;
         return quote!{
@@ -60,12 +64,12 @@ impl NodeMethods_ for NodeFixedBytes_ {
     }
 
     fn gather_write_deps(&self) -> Vec<Node> {
-        return self.rust.dep();
+        return self.mut_.borrow().rust.dep();
     }
 
     fn generate_write(&self) -> TokenStream {
         let source_ident = self.id.ident();
-        let dest_ident = self.serial.as_ref().unwrap().primary.0.borrow().id.ident();
+        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
         let serial_start = self.start;
         let serial_bytes = self.len;
         return quote!{
@@ -76,13 +80,14 @@ impl NodeMethods_ for NodeFixedBytes_ {
         };
     }
 
-    fn set_rust(&mut self, rust: Node) {
-        if let Some(r) = &self.rust {
+    fn set_rust(&self, rust: Node) {
+        let mut mut_ = self.mut_.borrow_mut();
+        if let Some(r) = &mut_.rust {
             if r.id() != rust.id() {
                 panic!("Rust end of {} already connected to node {}", self.id, r.id());
             }
         }
-        self.rust = Some(rust);
+        mut_.rust = Some(rust);
     }
 
     fn scope(&self) -> Object {
@@ -96,19 +101,21 @@ impl NodeMethods_ for NodeFixedBytes_ {
 
 impl NodeFixedBytes {
     pub(crate) fn new(args: NodeFixedBytesArgs) -> NodeFixedBytes {
-        return NodeFixedBytes(new_s(NodeFixedBytes_ {
+        return NodeFixedBytes(Gc::new(NodeFixedBytes_ {
             scope: args.scope,
             id: args.id,
-            serial: None,
             start: args.start,
             len: args.len,
-            rust: None,
+            mut_: GcCell::new(NodeFixedBytesMut_ {
+                serial: None,
+                rust: None,
+            }),
         }));
     }
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub struct NodeFixedBytes(pub(crate) S<NodeFixedBytes_>);
+pub struct NodeFixedBytes(pub(crate) Gc<NodeFixedBytes_>);
 
 impl Into<Node> for NodeFixedBytes {
     fn into(self) -> Node {

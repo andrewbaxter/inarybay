@@ -1,6 +1,8 @@
 use gc::{
     Finalize,
     Trace,
+    GcCell,
+    Gc,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -10,32 +12,35 @@ use crate::{
         RedirectRef,
         NodeMethods,
         ToDep,
-        NodeMethods_,
     },
     util::{
         LateInit,
         ToIdent,
-        S,
     },
     object::Object,
     derive_forward_node_methods,
 };
 
 #[derive(Trace, Finalize)]
+pub(crate) struct NodeConstMut_ {
+    pub(crate) serial: LateInit<RedirectRef<Node, Node>>,
+}
+
+#[derive(Trace, Finalize)]
 pub(crate) struct NodeConst_ {
     pub(crate) id: String,
-    pub(crate) serial: LateInit<RedirectRef<Node, Node>>,
+    pub(crate) mut_: GcCell<NodeConstMut_>,
     #[unsafe_ignore_trace]
     pub(crate) expect: TokenStream,
 }
 
-impl NodeMethods_ for NodeConst_ {
+impl NodeMethods for NodeConst_ {
     fn gather_read_deps(&self) -> Vec<Node> {
-        return self.serial.dep();
+        return self.mut_.borrow().serial.dep();
     }
 
     fn generate_read(&self) -> TokenStream {
-        let source_ident = self.serial.as_ref().unwrap().primary.id().ident();
+        let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
         let expect = &self.expect;
         return quote!{
             if #source_ident != #expect {
@@ -49,14 +54,14 @@ impl NodeMethods_ for NodeConst_ {
     }
 
     fn generate_write(&self) -> TokenStream {
-        let dest_ident = self.serial.as_ref().unwrap().primary.id().ident();
+        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
         let expect = &self.expect;
         return quote!{
             let #dest_ident = #expect;
         };
     }
 
-    fn set_rust(&mut self, _rust: Node) {
+    fn set_rust(&self, _rust: Node) {
         unreachable!();
     }
 
@@ -70,7 +75,7 @@ impl NodeMethods_ for NodeConst_ {
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub(crate) struct NodeConst(pub(crate) S<NodeConst_>);
+pub(crate) struct NodeConst(pub(crate) Gc<NodeConst_>);
 
 impl Into<Node> for NodeConst {
     fn into(self) -> Node {

@@ -1,6 +1,8 @@
 use gc::{
     Finalize,
     Trace,
+    GcCell,
+    Gc,
 };
 use proc_macro2::{
     TokenStream,
@@ -8,11 +10,9 @@ use proc_macro2::{
 };
 use crate::{
     util::{
-        S,
         ToIdent,
         BVec,
         LateInit,
-        new_s,
     },
     node_fixed_range::NodeFixedRange,
     node::{
@@ -20,7 +20,6 @@ use crate::{
         RedirectRef,
         NodeMethods,
         ToDep,
-        NodeMethods_,
     },
     object::Object,
     derive_forward_node_methods,
@@ -46,29 +45,34 @@ pub(crate) struct NodeIntArgs {
 }
 
 #[derive(Trace, Finalize)]
+pub(crate) struct NodeIntMut_ {
+    pub(crate) serial: LateInit<RedirectRef<NodeFixedRange, Node>>,
+    pub(crate) rust: Option<Node>,
+}
+
+#[derive(Trace, Finalize)]
 pub(crate) struct NodeInt_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
-    pub(crate) serial: LateInit<RedirectRef<NodeFixedRange, Node>>,
     pub(crate) start: BVec,
     pub(crate) len: BVec,
     pub(crate) signed: bool,
     pub(crate) endian: Endian,
-    pub(crate) rust: Option<Node>,
+    pub(crate) mut_: GcCell<NodeIntMut_>,
     // Computed
     pub(crate) rust_bits: usize,
     #[unsafe_ignore_trace]
     pub(crate) rust_type: Ident,
 }
 
-impl NodeMethods_ for NodeInt_ {
+impl NodeMethods for NodeInt_ {
     fn gather_read_deps(&self) -> Vec<Node> {
-        return self.serial.dep();
+        return self.mut_.borrow().serial.dep();
     }
 
     fn generate_read(&self) -> TokenStream {
         let dest_ident = self.id.ident();
-        let source_ident = self.serial.as_ref().unwrap().primary.0.borrow().id.ident();
+        let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
         if self.len.bits <= 8 {
             if self.start.bits + self.len.bits > 8 {
                 panic!();
@@ -136,12 +140,12 @@ impl NodeMethods_ for NodeInt_ {
     }
 
     fn gather_write_deps(&self) -> Vec<Node> {
-        return self.rust.dep();
+        return self.mut_.borrow().rust.dep();
     }
 
     fn generate_write(&self) -> TokenStream {
         let source_ident = self.id.ident();
-        let dest_ident = self.serial.as_ref().unwrap().primary.0.borrow().id.ident();
+        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
         if self.len.bits <= 8 {
             if self.start.bits + self.len.bits > 8 {
                 panic!();
@@ -191,13 +195,14 @@ impl NodeMethods_ for NodeInt_ {
         }
     }
 
-    fn set_rust(&mut self, rust: Node) {
-        if let Some(r) = &self.rust {
+    fn set_rust(&self, rust: Node) {
+        let mut mut_ = self.mut_.borrow_mut();
+        if let Some(r) = &mut_.rust {
             if r.id() != rust.id() {
                 panic!("Rust end of {} already connected to node {}", self.id, r.id());
             }
         }
-        self.rust = Some(rust);
+        mut_.rust = Some(rust);
     }
 
     fn scope(&self) -> Object {
@@ -224,23 +229,25 @@ impl NodeInt {
         } else {
             sign_prefix = "u";
         }
-        return NodeInt(new_s(NodeInt_ {
+        return NodeInt(Gc::new(NodeInt_ {
             scope: args.scope,
             id: args.id,
-            serial: None,
             start: args.start,
             len: args.len,
             signed: args.signed,
             endian: args.endian,
-            rust: None,
             rust_type: format_ident!("{}{}", sign_prefix, rust_bits),
             rust_bits: rust_bits,
+            mut_: GcCell::new(NodeIntMut_ {
+                serial: None,
+                rust: None,
+            }),
         }));
     }
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub struct NodeInt(pub(crate) S<NodeInt_>);
+pub struct NodeInt(pub(crate) Gc<NodeInt_>);
 
 impl Into<Node> for NodeInt {
     fn into(self) -> Node {

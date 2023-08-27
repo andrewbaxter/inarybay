@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use gc::{
     Finalize,
     Trace,
+    GcCell,
+    Gc,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -10,10 +12,8 @@ use crate::{
         Node,
         NodeMethods,
         ToDep,
-        NodeMethods_,
     },
     util::{
-        S,
         ToIdent,
     },
     object::{
@@ -24,6 +24,11 @@ use crate::{
 };
 
 #[derive(Trace, Finalize)]
+pub(crate) struct NodeFixedRangeMut_ {
+    pub(crate) rust: BTreeMap<String, Node>,
+}
+
+#[derive(Trace, Finalize)]
 pub(crate) struct NodeFixedRange_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
@@ -31,10 +36,10 @@ pub(crate) struct NodeFixedRange_ {
     // NodeSerial or NodeRange
     pub(crate) serial: NodeSerialSegment,
     pub(crate) len_bytes: usize,
-    pub(crate) rust: BTreeMap<String, Node>,
+    pub(crate) mut_: GcCell<NodeFixedRangeMut_>,
 }
 
-impl NodeMethods_ for NodeFixedRange_ {
+impl NodeMethods for NodeFixedRange_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         let mut out = vec![];
         out.extend(self.serial.dep());
@@ -43,7 +48,7 @@ impl NodeMethods_ for NodeFixedRange_ {
     }
 
     fn generate_read(&self) -> TokenStream {
-        let serial_ident = self.serial.0.borrow().id.ident();
+        let serial_ident = self.serial.0.id.ident();
         let ident = self.id.ident();
         let bytes = self.len_bytes;
         return quote!{
@@ -53,20 +58,20 @@ impl NodeMethods_ for NodeFixedRange_ {
 
     fn gather_write_deps(&self) -> Vec<Node> {
         let mut out = vec![];
-        out.extend(self.rust.values().cloned());
+        out.extend(self.mut_.borrow().rust.values().cloned());
         return out;
     }
 
     fn generate_write(&self) -> TokenStream {
-        let dest_ident = self.serial.0.borrow().id.ident();
+        let dest_ident = self.serial.0.id.ident();
         let source_ident = self.id.ident();
         return quote!{
             let #dest_ident = #source_ident;
         }
     }
 
-    fn set_rust(&mut self, rust: Node) {
-        self.rust.insert(rust.id(), rust);
+    fn set_rust(&self, rust: Node) {
+        self.mut_.borrow_mut().rust.insert(rust.id(), rust);
     }
 
     fn scope(&self) -> Object {
@@ -90,7 +95,7 @@ impl NodeFixedRange_ {
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub(crate) struct NodeFixedRange(pub(crate) S<NodeFixedRange_>);
+pub(crate) struct NodeFixedRange(pub(crate) Gc<NodeFixedRange_>);
 
 impl Into<Node> for NodeFixedRange {
     fn into(self) -> Node {

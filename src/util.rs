@@ -8,8 +8,6 @@ use std::{
     fmt::Display,
 };
 use gc::{
-    GcCell,
-    Gc,
     Trace,
     Finalize,
 };
@@ -29,12 +27,6 @@ impl<T: IdentFragment> ToIdent for T {
     fn ident(&self) -> Ident {
         return format_ident!("{}", self);
     }
-}
-
-pub(crate) type S<T> = Gc<GcCell<T>>;
-
-pub(crate) fn new_s<T: Finalize + Trace>(t: T) -> S<T> {
-    return Gc::new(GcCell::new(t));
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -106,13 +98,11 @@ impl Sub for BVec {
         let mut avail_bytes = self.bytes;
         let mut bits = rhs.bits;
         if bits > self.bits {
-            bits -= avail_bits;
-            avail_bits = 0;
-        }
-        if bits > 0 {
             avail_bytes -= 1;
-            avail_bits = 8 - bits;
+            bits -= avail_bits;
+            avail_bits = 8;
         }
+        avail_bits -= bits;
         avail_bytes -= rhs.bytes;
         return BVec {
             bytes: avail_bytes,

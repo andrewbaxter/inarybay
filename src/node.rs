@@ -22,19 +22,8 @@ use crate::{
     object::{
         Object,
     },
-    node_zero::NodeZero,
     node_fixed_bytes::NodeFixedBytes,
 };
-
-pub(crate) trait NodeMethods_ {
-    fn gather_read_deps(&self) -> Vec<Node>;
-    fn generate_read(&self) -> TokenStream;
-    fn gather_write_deps(&self) -> Vec<Node>;
-    fn generate_write(&self) -> TokenStream;
-    fn set_rust(&mut self, rust: Node);
-    fn scope(&self) -> Object;
-    fn id(&self) -> String;
-}
 
 #[enum_dispatch]
 pub(crate) trait NodeMethods {
@@ -52,31 +41,31 @@ macro_rules! derive_forward_node_methods{
     ($x: ty) => {
         impl NodeMethods for $x {
             fn gather_read_deps(&self) -> Vec<Node> {
-                return self.0.borrow().gather_read_deps();
+                return self.0.gather_read_deps();
             }
 
             fn generate_read(&self) -> TokenStream {
-                return self.0.borrow().generate_read();
+                return self.0.generate_read();
             }
 
             fn gather_write_deps(&self) -> Vec<Node> {
-                return self.0.borrow().gather_write_deps();
+                return self.0.gather_write_deps();
             }
 
             fn generate_write(&self) -> TokenStream {
-                return self.0.borrow().generate_write();
+                return self.0.generate_write();
             }
 
             fn set_rust(&self, rust: Node) {
-                return self.0.borrow_mut().set_rust(rust);
+                return self.0.set_rust(rust);
             }
 
             fn scope(&self) -> Object {
-                return self.0.borrow().scope();
+                return self.0.scope();
             }
 
             fn id(&self) -> String {
-                return self.0.borrow().id();
+                return self.0.id();
             }
         }
     };
@@ -95,7 +84,6 @@ pub(crate) enum Node_ {
     DynamicArray(NodeDynamicArray),
     Enum(NodeEnum),
     Const(NodeConst),
-    Zero(NodeZero),
     RustField(NodeRustField),
     RustObj(NodeRustObj),
 }
@@ -113,7 +101,6 @@ impl NodeMethods for Node_ {
             Node_::DynamicArray(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Enum(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Const(inner) => NodeMethods::gather_read_deps(inner),
-            Node_::Zero(inner) => NodeMethods::gather_read_deps(inner),
             Node_::RustField(inner) => NodeMethods::gather_read_deps(inner),
             Node_::RustObj(inner) => NodeMethods::gather_read_deps(inner),
         }
@@ -131,7 +118,6 @@ impl NodeMethods for Node_ {
             Node_::DynamicArray(inner) => NodeMethods::generate_read(inner),
             Node_::Enum(inner) => NodeMethods::generate_read(inner),
             Node_::Const(inner) => NodeMethods::generate_read(inner),
-            Node_::Zero(inner) => NodeMethods::generate_read(inner),
             Node_::RustField(inner) => NodeMethods::generate_read(inner),
             Node_::RustObj(inner) => NodeMethods::generate_read(inner),
         }
@@ -149,7 +135,6 @@ impl NodeMethods for Node_ {
             Node_::DynamicArray(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Enum(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Const(inner) => NodeMethods::gather_write_deps(inner),
-            Node_::Zero(inner) => NodeMethods::gather_write_deps(inner),
             Node_::RustField(inner) => NodeMethods::gather_write_deps(inner),
             Node_::RustObj(inner) => NodeMethods::gather_write_deps(inner),
         }
@@ -167,7 +152,6 @@ impl NodeMethods for Node_ {
             Node_::DynamicArray(inner) => NodeMethods::generate_write(inner),
             Node_::Enum(inner) => NodeMethods::generate_write(inner),
             Node_::Const(inner) => NodeMethods::generate_write(inner),
-            Node_::Zero(inner) => NodeMethods::generate_write(inner),
             Node_::RustField(inner) => NodeMethods::generate_write(inner),
             Node_::RustObj(inner) => NodeMethods::generate_write(inner),
         }
@@ -199,7 +183,6 @@ impl NodeMethods for Node_ {
             Node_::Const(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
-            Node_::Zero(inner) => NodeMethods::set_rust(inner, __enum_dispatch_arg_0),
             Node_::RustField(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
@@ -221,7 +204,6 @@ impl NodeMethods for Node_ {
             Node_::DynamicArray(inner) => NodeMethods::scope(inner),
             Node_::Enum(inner) => NodeMethods::scope(inner),
             Node_::Const(inner) => NodeMethods::scope(inner),
-            Node_::Zero(inner) => NodeMethods::scope(inner),
             Node_::RustField(inner) => NodeMethods::scope(inner),
             Node_::RustObj(inner) => NodeMethods::scope(inner),
         }
@@ -239,7 +221,6 @@ impl NodeMethods for Node_ {
             Node_::DynamicArray(inner) => NodeMethods::id(inner),
             Node_::Enum(inner) => NodeMethods::id(inner),
             Node_::Const(inner) => NodeMethods::id(inner),
-            Node_::Zero(inner) => NodeMethods::id(inner),
             Node_::RustField(inner) => NodeMethods::id(inner),
             Node_::RustObj(inner) => NodeMethods::id(inner),
         }
@@ -258,7 +239,6 @@ impl Node_ {
             Node_::DynamicArray(_) => "array",
             Node_::Enum(_) => "enum",
             Node_::Const(_) => "const",
-            Node_::Zero(_) => "zero",
             Node_::RustField(_) => unreachable!(),
             Node_::RustObj(_) => unreachable!(),
         }

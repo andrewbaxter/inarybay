@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use gc::{
     Finalize,
     Trace,
+    Gc,
+    GcCell,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -10,10 +12,8 @@ use crate::{
         Node,
         NodeMethods,
         ToDep,
-        NodeMethods_,
     },
     util::{
-        S,
         ToIdent,
     },
     object::Object,
@@ -21,13 +21,18 @@ use crate::{
 };
 
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeSerial_ {
-    pub(crate) id: String,
+pub(crate) struct NodeSerialMut_ {
     pub(crate) children: Vec<NodeSerialSegment>,
     pub(crate) lifted_serial_deps: BTreeMap<String, Node>,
 }
 
-impl NodeMethods_ for NodeSerial_ {
+#[derive(Trace, Finalize)]
+pub(crate) struct NodeSerial_ {
+    pub(crate) id: String,
+    pub(crate) mut_: GcCell<NodeSerialMut_>,
+}
+
+impl NodeMethods for NodeSerial_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         return vec![];
     }
@@ -38,16 +43,16 @@ impl NodeMethods_ for NodeSerial_ {
 
     fn gather_write_deps(&self) -> Vec<Node> {
         let mut out = vec![];
-        out.extend(self.children.dep());
-        out.extend(self.lifted_serial_deps.values().cloned());
+        out.extend(self.mut_.borrow().children.dep());
+        out.extend(self.mut_.borrow().lifted_serial_deps.values().cloned());
         return out;
     }
 
     fn generate_write(&self) -> TokenStream {
         let mut code = vec![];
         let serial_ident = self.id.ident();
-        for child in &self.children {
-            let child_ident = child.0.borrow().id.ident();
+        for child in &self.mut_.borrow().children {
+            let child_ident = child.0.id.ident();
             code.push(quote!{
                 #serial_ident.write(& #child_ident) ?;
             });
@@ -55,7 +60,7 @@ impl NodeMethods_ for NodeSerial_ {
         return quote!(#(#code) *);
     }
 
-    fn set_rust(&mut self, _rust: Node) {
+    fn set_rust(&self, _rust: Node) {
         unreachable!();
     }
 
@@ -69,7 +74,7 @@ impl NodeMethods_ for NodeSerial_ {
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub(crate) struct NodeSerial(pub(crate) S<NodeSerial_>);
+pub(crate) struct NodeSerial(pub(crate) Gc<NodeSerial_>);
 
 impl Into<Node> for NodeSerial {
     fn into(self) -> Node {
@@ -80,15 +85,20 @@ impl Into<Node> for NodeSerial {
 derive_forward_node_methods!(NodeSerial);
 
 #[derive(Trace, Finalize)]
+pub(crate) struct NodeSerialSegmentMut_ {
+    pub(crate) rust: Option<Node>,
+}
+
+#[derive(Trace, Finalize)]
 pub(crate) struct NodeSerialSegment_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
     pub(crate) serial_root: NodeSerial,
     pub(crate) serial_before: Option<NodeSerialSegment>,
-    pub(crate) rust: Option<Node>,
+    pub(crate) mut_: GcCell<NodeSerialSegmentMut_>,
 }
 
-impl NodeMethods_ for NodeSerialSegment_ {
+impl NodeMethods for NodeSerialSegment_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         let mut out = vec![];
         out.extend(self.serial_root.dep());
@@ -103,12 +113,12 @@ impl NodeMethods_ for NodeSerialSegment_ {
     fn gather_write_deps(&self) -> Vec<Node> {
         let mut out = vec![];
         out.extend(self.serial_before.dep());
-        out.extend(self.rust.dep());
+        out.extend(self.mut_.borrow().rust.dep());
         return out;
     }
 
     fn generate_write(&self) -> TokenStream {
-        let serial_ident = self.serial_root.0.borrow().id.ident();
+        let serial_ident = self.serial_root.0.id.ident();
         let ident = self.id.ident();
         return quote!{
             #serial_ident.write(& #ident);
@@ -116,7 +126,7 @@ impl NodeMethods_ for NodeSerialSegment_ {
         }
     }
 
-    fn set_rust(&mut self, _rust: Node) {
+    fn set_rust(&self, _rust: Node) {
         unreachable!();
     }
 
@@ -130,7 +140,7 @@ impl NodeMethods_ for NodeSerialSegment_ {
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub(crate) struct NodeSerialSegment(pub(crate) S<NodeSerialSegment_>);
+pub(crate) struct NodeSerialSegment(pub(crate) Gc<NodeSerialSegment_>);
 
 impl Into<Node> for NodeSerialSegment {
     fn into(self) -> Node {

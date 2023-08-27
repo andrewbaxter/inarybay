@@ -1,6 +1,8 @@
 use gc::{
     Finalize,
     Trace,
+    Gc,
+    GcCell,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -10,13 +12,11 @@ use crate::{
         RedirectRef,
         NodeMethods,
         ToDep,
-        NodeMethods_,
     },
     node_serial::{
         NodeSerialSegment,
     },
     util::{
-        S,
         ToIdent,
         LateInit,
     },
@@ -26,27 +26,32 @@ use crate::{
 };
 
 #[derive(Trace, Finalize)]
+pub(crate) struct NodeDynamicBytesMut_ {
+    pub(crate) serial_len: LateInit<RedirectRef<NodeInt, Node>>,
+    pub(crate) rust: Option<Node>,
+}
+
+#[derive(Trace, Finalize)]
 pub(crate) struct NodeDynamicBytes_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
-    pub(crate) serial_len: LateInit<RedirectRef<NodeInt, Node>>,
-    pub(crate) rust: Option<Node>,
+    pub(crate) mut_: GcCell<NodeDynamicBytesMut_>,
 }
 
-impl NodeMethods_ for NodeDynamicBytes_ {
+impl NodeMethods for NodeDynamicBytes_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         let mut out = vec![];
         out.extend(self.serial_before.dep());
-        out.extend(self.serial_len.dep());
+        out.extend(self.mut_.borrow().serial_len.dep());
         out.extend(self.serial.dep());
         return out;
     }
 
     fn generate_read(&self) -> TokenStream {
-        let source_ident = self.serial.0.borrow().serial_root.0.borrow().id.ident();
-        let source_len_ident = self.serial_len.as_ref().unwrap().primary.0.borrow().id.ident();
+        let source_ident = self.serial.0.serial_root.0.id.ident();
+        let source_len_ident = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id.ident();
         let dest_ident = self.id.ident();
         return quote!{
             let mut #dest_ident = #source_ident.read_len(#source_len_ident) ?;
@@ -54,13 +59,13 @@ impl NodeMethods_ for NodeDynamicBytes_ {
     }
 
     fn gather_write_deps(&self) -> Vec<Node> {
-        return self.rust.dep();
+        return self.mut_.borrow().rust.dep();
     }
 
     fn generate_write(&self) -> TokenStream {
         let source_ident = self.id.ident();
-        let dest_ident = self.serial.0.borrow().serial_root.0.borrow().id.ident();
-        let serial_len = self.serial_len.as_ref().unwrap().primary.0.borrow();
+        let dest_ident = self.serial.0.serial_root.0.id.ident();
+        let serial_len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.clone();
         let dest_len_ident = serial_len.id.ident();
         let dest_len_type = &serial_len.rust_type;
         return quote!{
@@ -69,13 +74,14 @@ impl NodeMethods_ for NodeDynamicBytes_ {
         };
     }
 
-    fn set_rust(&mut self, rust: Node) {
-        if let Some(r) = &self.rust {
+    fn set_rust(&self, rust: Node) {
+        let mut mut_ = self.mut_.borrow_mut();
+        if let Some(r) = &mut_.rust {
             if r.id() != rust.id() {
                 panic!("Rust end of {} already connected to node {}", self.id, r.id());
             }
         }
-        self.rust = Some(rust);
+        mut_.rust = Some(rust);
     }
 
     fn scope(&self) -> Object {
@@ -88,7 +94,7 @@ impl NodeMethods_ for NodeDynamicBytes_ {
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub struct NodeDynamicBytes(pub(crate) S<NodeDynamicBytes_>);
+pub struct NodeDynamicBytes(pub(crate) Gc<NodeDynamicBytes_>);
 
 impl Into<Node> for NodeDynamicBytes {
     fn into(self) -> Node {

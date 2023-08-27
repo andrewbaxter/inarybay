@@ -15,13 +15,15 @@ pub fn main() {
     let root = PathBuf::from_str(&env::var("CARGO_MANIFEST_DIR").unwrap()).unwrap();
     let src = root.join("src");
     let write = |name: &str, s: Schema| {
-        fs::write(
-            src.join(format!("gen_{}.rs", name)),
-            genemichaels::format_str(&s.generate(true, true).to_string(), &genemichaels::FormatConfig::default())
-                .unwrap()
-                .rendered
-                .as_bytes(),
-        ).unwrap();
+        let ts = s.generate(true, true).to_string();
+        let formatted = match genemichaels::format_str(&ts, &genemichaels::FormatConfig::default()) {
+            Err(e) => {
+                eprintln!("{}", ts);
+                panic!("{}", e);
+            },
+            Ok(f) => f,
+        };
+        fs::write(src.join(format!("gen_{}.rs", name)), formatted.rendered.as_bytes()).unwrap();
     };
 
     // Fixed bytes
@@ -125,10 +127,10 @@ pub fn main() {
         let s = inarybay::schema::Schema::new();
         let top = s.object("zJDI9H4JF", "T1");
         let len = top.int("zSA2RONLC", top.fixed_range("z9K3TNON3", 1), Endian::Little, false);
-        let (arr, arr_builder) = top.dynamic_array("zXZTIT4K3", len, "Thrusters");
-        arr_builder.rust_field(
+        let (arr, arr_elem) = top.dynamic_array("zXZTIT4K3", len, "Thrusters");
+        arr_elem.rust_field(
             "zFXRLSAHE",
-            top.int("z4QM2N96U", top.fixed_range("zZTXFJH14", 1), Endian::Little, true),
+            arr_elem.int("z4QM2N96U", arr_elem.fixed_range("zZTXFJH14", 1), Endian::Little, true),
             "f",
         );
         top.rust_field("z9F5CKEP5", arr, "thrusters");
@@ -143,8 +145,8 @@ pub fn main() {
         let (enum_, enum_builder) = top.enum_("zR6V6CZJQ", tag, "August");
         let november = enum_builder.variant("zGRTFX9I3", "November", "November", quote!(0));
         november.rust_field(
-            "zFXRLSAHE",
-            november.int("z4QM2N96U", november.fixed_range("zZTXFJH14", 1), Endian::Little, true),
+            "zKEPRZWGF",
+            november.int("zFCS161O2", november.fixed_range("zAZ2G3MG1", 1), Endian::Little, true),
             "f",
         );
         let december = enum_builder.variant("zQG5ZEV9Z", "December", "December", quote!(1));
@@ -164,8 +166,8 @@ pub fn main() {
         let tag = top.int("zSA2RONLC", top.fixed_range("z9K3TNON3", 1), Endian::Little, false);
         let external = top.fixed_range("zZTXFJH14", 1);
         let (enum_, enum_builder) = top.enum_("zR6V6CZJQ", tag, "August");
-        let november = enum_builder.variant("zGRTFX9I3", "November", "November", quote!(0));
-        november.rust_field("zFXRLSAHE", top.int("z4QM2N96U", external.clone(), Endian::Little, true), "f");
+        let november = enum_builder.variant("z71ZZPEGR", "November", "November", quote!(0));
+        november.rust_field("zVMIA1US6", top.int("zLS23TK2G", external.clone(), Endian::Little, true), "f");
         let december = enum_builder.variant("zQG5ZEV9Z", "December", "December", quote!(1));
         december.rust_field("zFXRLSAHE", top.int("z4QM2N96U", external.clone(), Endian::Little, true), "f");
         top.rust_field("z9F5CKEP5", enum_, "august");

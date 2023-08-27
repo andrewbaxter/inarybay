@@ -8,7 +8,6 @@ pub mod node_fixed_bytes;
 pub mod node_serial;
 pub mod node_const;
 pub mod node_rust;
-pub mod node_zero;
 pub mod node;
 pub mod object;
 pub mod schema;
