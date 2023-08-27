@@ -1,11 +1,10 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-};
 use enum_dispatch::enum_dispatch;
+use gc::{
+    Trace,
+    Finalize,
+};
 use proc_macro2::TokenStream;
 use crate::{
-    util::S,
     node_serial::{
         NodeSerial,
         NodeSerialSegment,
@@ -20,50 +19,220 @@ use crate::{
         NodeRustObj,
     },
     node_enum::NodeEnum,
-    object::Object_,
+    object::{
+        Object,
+    },
     node_zero::NodeZero,
 };
 
+pub(crate) trait NodeMethods_ {
+    fn gather_read_deps(&self) -> Vec<Node>;
+    fn generate_read(&self) -> TokenStream;
+    fn gather_write_deps(&self) -> Vec<Node>;
+    fn generate_write(&self) -> TokenStream;
+    fn set_rust(&mut self, rust: Node);
+    fn scope(&self) -> Object;
+    fn id(&self) -> String;
+}
+
 #[enum_dispatch]
 pub(crate) trait NodeMethods {
-    fn read_deps(&self) -> Vec<Node>;
+    fn gather_read_deps(&self) -> Vec<Node>;
     fn generate_read(&self) -> TokenStream;
-    fn write_deps(&self) -> Vec<Node>;
+    fn gather_write_deps(&self) -> Vec<Node>;
     fn generate_write(&self) -> TokenStream;
+    fn set_rust(&self, rust: Node);
+    fn scope(&self) -> Object;
+    fn id(&self) -> String;
 }
 
-impl<T: NodeMethods> NodeMethods for S<T> {
-    fn read_deps(&self) -> Vec<Node> {
-        return self.read_deps();
-    }
+#[macro_export]
+macro_rules! derive_forward_node_methods{
+    ($x: ty) => {
+        impl NodeMethods for $x {
+            fn gather_read_deps(&self) -> Vec<Node> {
+                return self.0.borrow().gather_read_deps();
+            }
 
-    fn generate_read(&self) -> TokenStream {
-        return self.generate_read();
-    }
+            fn generate_read(&self) -> TokenStream {
+                return self.0.borrow().generate_read();
+            }
 
-    fn write_deps(&self) -> Vec<Node> {
-        return self.write_deps();
-    }
+            fn gather_write_deps(&self) -> Vec<Node> {
+                return self.0.borrow().gather_write_deps();
+            }
 
-    fn generate_write(&self) -> TokenStream {
-        return self.generate_write();
-    }
+            fn generate_write(&self) -> TokenStream {
+                return self.0.borrow().generate_write();
+            }
+
+            fn set_rust(&self, rust: Node) {
+                return self.0.borrow_mut().set_rust(rust);
+            }
+
+            fn scope(&self) -> Object {
+                return self.0.borrow().scope();
+            }
+
+            fn id(&self) -> String {
+                return self.0.borrow().id();
+            }
+        }
+    };
 }
 
+#[derive(Clone, Trace, Finalize)]
 #[samevariant::samevariant(NodeSameVariant)]
-#[enum_dispatch(NodeMethods)]
+//. #[enum_dispatch(NodeMethods)]
 pub(crate) enum Node_ {
-    Serial(S<NodeSerial>),
-    SerialSegment(S<NodeSerialSegment>),
-    FixedBytes(S<NodeFixedBytes>),
-    Int(S<NodeInt>),
-    DynamicBytes(S<NodeDynamicBytes>),
-    Array(S<NodeDynamicArray>),
-    Enum(S<NodeEnum>),
-    Const(S<NodeConst>),
-    Zero(S<NodeZero>),
-    RustField(S<NodeRustField>),
-    RustObj(S<NodeRustObj>),
+    Serial(NodeSerial),
+    SerialSegment(NodeSerialSegment),
+    FixedBytes(NodeFixedBytes),
+    Int(NodeInt),
+    DynamicBytes(NodeDynamicBytes),
+    DynamicArray(NodeDynamicArray),
+    Enum(NodeEnum),
+    Const(NodeConst),
+    Zero(NodeZero),
+    RustField(NodeRustField),
+    RustObj(NodeRustObj),
+}
+
+impl NodeMethods for Node_ {
+    #[inline]
+    fn gather_read_deps(&self) -> Vec<Node> {
+        match self {
+            Node_::Serial(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::SerialSegment(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::FixedBytes(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::Int(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::DynamicBytes(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::DynamicArray(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::Enum(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::Const(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::Zero(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::RustField(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::RustObj(inner) => NodeMethods::gather_read_deps(inner),
+        }
+    }
+
+    #[inline]
+    fn generate_read(&self) -> TokenStream {
+        match self {
+            Node_::Serial(inner) => NodeMethods::generate_read(inner),
+            Node_::SerialSegment(inner) => NodeMethods::generate_read(inner),
+            Node_::FixedBytes(inner) => NodeMethods::generate_read(inner),
+            Node_::Int(inner) => NodeMethods::generate_read(inner),
+            Node_::DynamicBytes(inner) => NodeMethods::generate_read(inner),
+            Node_::DynamicArray(inner) => NodeMethods::generate_read(inner),
+            Node_::Enum(inner) => NodeMethods::generate_read(inner),
+            Node_::Const(inner) => NodeMethods::generate_read(inner),
+            Node_::Zero(inner) => NodeMethods::generate_read(inner),
+            Node_::RustField(inner) => NodeMethods::generate_read(inner),
+            Node_::RustObj(inner) => NodeMethods::generate_read(inner),
+        }
+    }
+
+    #[inline]
+    fn gather_write_deps(&self) -> Vec<Node> {
+        match self {
+            Node_::Serial(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::SerialSegment(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::FixedBytes(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::Int(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::DynamicBytes(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::DynamicArray(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::Enum(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::Const(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::Zero(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::RustField(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::RustObj(inner) => NodeMethods::gather_write_deps(inner),
+        }
+    }
+
+    #[inline]
+    fn generate_write(&self) -> TokenStream {
+        match self {
+            Node_::Serial(inner) => NodeMethods::generate_write(inner),
+            Node_::SerialSegment(inner) => NodeMethods::generate_write(inner),
+            Node_::FixedBytes(inner) => NodeMethods::generate_write(inner),
+            Node_::Int(inner) => NodeMethods::generate_write(inner),
+            Node_::DynamicBytes(inner) => NodeMethods::generate_write(inner),
+            Node_::DynamicArray(inner) => NodeMethods::generate_write(inner),
+            Node_::Enum(inner) => NodeMethods::generate_write(inner),
+            Node_::Const(inner) => NodeMethods::generate_write(inner),
+            Node_::Zero(inner) => NodeMethods::generate_write(inner),
+            Node_::RustField(inner) => NodeMethods::generate_write(inner),
+            Node_::RustObj(inner) => NodeMethods::generate_write(inner),
+        }
+    }
+
+    #[inline]
+    fn set_rust(&self, __enum_dispatch_arg_0: Node) {
+        match self {
+            Node_::Serial(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::SerialSegment(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::FixedBytes(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Int(inner) => NodeMethods::set_rust(inner, __enum_dispatch_arg_0),
+            Node_::DynamicBytes(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::DynamicArray(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Enum(inner) => NodeMethods::set_rust(inner, __enum_dispatch_arg_0),
+            Node_::Const(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Zero(inner) => NodeMethods::set_rust(inner, __enum_dispatch_arg_0),
+            Node_::RustField(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::RustObj(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+        }
+    }
+
+    #[inline]
+    fn scope(&self) -> Object {
+        match self {
+            Node_::Serial(inner) => NodeMethods::scope(inner),
+            Node_::SerialSegment(inner) => NodeMethods::scope(inner),
+            Node_::FixedBytes(inner) => NodeMethods::scope(inner),
+            Node_::Int(inner) => NodeMethods::scope(inner),
+            Node_::DynamicBytes(inner) => NodeMethods::scope(inner),
+            Node_::DynamicArray(inner) => NodeMethods::scope(inner),
+            Node_::Enum(inner) => NodeMethods::scope(inner),
+            Node_::Const(inner) => NodeMethods::scope(inner),
+            Node_::Zero(inner) => NodeMethods::scope(inner),
+            Node_::RustField(inner) => NodeMethods::scope(inner),
+            Node_::RustObj(inner) => NodeMethods::scope(inner),
+        }
+    }
+
+    #[inline]
+    fn id(&self) -> String {
+        match self {
+            Node_::Serial(inner) => NodeMethods::id(inner),
+            Node_::SerialSegment(inner) => NodeMethods::id(inner),
+            Node_::FixedBytes(inner) => NodeMethods::id(inner),
+            Node_::Int(inner) => NodeMethods::id(inner),
+            Node_::DynamicBytes(inner) => NodeMethods::id(inner),
+            Node_::DynamicArray(inner) => NodeMethods::id(inner),
+            Node_::Enum(inner) => NodeMethods::id(inner),
+            Node_::Const(inner) => NodeMethods::id(inner),
+            Node_::Zero(inner) => NodeMethods::id(inner),
+            Node_::RustField(inner) => NodeMethods::id(inner),
+            Node_::RustObj(inner) => NodeMethods::id(inner),
+        }
+    }
 }
 
 impl Node_ {
@@ -74,7 +243,7 @@ impl Node_ {
             Node_::FixedBytes(_) => "fixed bytes",
             Node_::Int(_) => "int",
             Node_::DynamicBytes(_) => "dynamic bytes",
-            Node_::Array(_) => "array",
+            Node_::DynamicArray(_) => "array",
             Node_::Enum(_) => "enum",
             Node_::Const(_) => "const",
             Node_::Zero(_) => "zero",
@@ -84,98 +253,46 @@ impl Node_ {
     }
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct Node(pub &'static Node_);
+#[derive(Clone, Trace, Finalize)]
+pub struct Node(pub(crate) Node_);
 
-impl From<S<NodeSerial>> for Node {
-    fn from(value: S<NodeSerial>) -> Self {
-        return Node(Box::leak(Box::new(Node_::Serial(value))));
+impl NodeMethods for Node {
+    fn gather_read_deps(&self) -> Vec<Node> {
+        return self.0.gather_read_deps();
     }
-}
 
-impl From<S<NodeSerialSegment>> for Node {
-    fn from(value: S<NodeSerialSegment>) -> Self {
-        return Node(Box::leak(Box::new(Node_::SerialSegment(value))));
+    fn generate_read(&self) -> TokenStream {
+        return self.0.generate_read();
     }
-}
 
-impl From<S<NodeFixedBytes>> for Node {
-    fn from(value: S<NodeFixedBytes>) -> Self {
-        return Node(Box::leak(Box::new(Node_::FixedBytes(value))));
+    fn gather_write_deps(&self) -> Vec<Node> {
+        return self.0.gather_write_deps();
     }
-}
 
-impl From<S<NodeInt>> for Node {
-    fn from(value: S<NodeInt>) -> Self {
-        return Node(Box::leak(Box::new(Node_::Int(value))));
+    fn generate_write(&self) -> TokenStream {
+        return self.0.generate_write();
     }
-}
 
-impl From<S<NodeDynamicBytes>> for Node {
-    fn from(value: S<NodeDynamicBytes>) -> Self {
-        return Node(Box::leak(Box::new(Node_::DynamicBytes(value))));
+    fn set_rust(&self, rust: Node) {
+        return self.0.set_rust(rust);
     }
-}
 
-impl From<S<NodeDynamicArray>> for Node {
-    fn from(value: S<NodeDynamicArray>) -> Self {
-        return Node(Box::leak(Box::new(Node_::Array(value))));
+    fn scope(&self) -> Object {
+        return self.0.scope();
     }
-}
 
-impl From<S<NodeEnum>> for Node {
-    fn from(value: S<NodeEnum>) -> Self {
-        return Node(Box::leak(Box::new(Node_::Enum(value))));
-    }
-}
-
-impl From<S<NodeConst>> for Node {
-    fn from(value: S<NodeConst>) -> Self {
-        return Node(Box::leak(Box::new(Node_::Const(value))));
-    }
-}
-
-impl From<S<NodeRustField>> for Node {
-    fn from(value: S<NodeRustField>) -> Self {
-        return Node(Box::leak(Box::new(Node_::RustField(value))));
-    }
-}
-
-impl From<S<NodeRustObj>> for Node {
-    fn from(value: S<NodeRustObj>) -> Self {
-        return Node(Box::leak(Box::new(Node_::RustObj(value))));
+    fn id(&self) -> String {
+        return self.0.id();
     }
 }
 
 impl Node {
-    pub(crate) fn set_rust(&self, rust: Node) { }
-
-    pub(crate) fn scope(&self) -> Rc<RefCell<Object_>> {
-        match &*self.0 {
-            Node_::Serial(i) => unreachable!(),
-            Node_::FixedBytes(i) => i.borrow().scope,
-            Node_::Int(i) => i.borrow().scope,
-            Node_::DynamicBytes(i) => i.borrow().scope,
-            Node_::Array(i) => i.borrow().scope,
-            Node_::Enum(i) => i.borrow().scope,
-            Node_::Const(i) => unreachable!(),
-            Node_::RustField(i) => unreachable!(),
-            Node_::RustObj(i) => unreachable!(),
-        }.upgrade().unwrap()
+    pub(crate) fn scope(&self) -> Object {
+        todo!()
     }
 
     pub(crate) fn id(&self) -> String {
-        match self.0 {
-            Node_::Serial(n) => return n.borrow().id.clone(),
-            Node_::FixedBytes(n) => return n.borrow().id.clone(),
-            Node_::Int(n) => return n.borrow().id.clone(),
-            Node_::DynamicBytes(n) => return n.borrow().id.clone(),
-            Node_::Array(n) => return n.borrow().id.clone(),
-            Node_::Enum(n) => return n.borrow().id.clone(),
-            Node_::Const(n) => return n.borrow().id.clone(),
-            Node_::RustField(n) => return n.borrow().id.clone(),
-            Node_::RustObj(n) => return n.borrow().id.clone(),
-        }
+        todo!()
     }
 }
 
@@ -183,9 +300,9 @@ pub(crate) trait ToDep {
     fn dep(&self) -> Vec<Node>;
 }
 
-impl<T: Into<Node>> ToDep for T {
+impl<T: Into<Node> + Clone> ToDep for T {
     fn dep(&self) -> Vec<Node> {
-        return vec![(*self).into()];
+        return vec![self.clone().into()];
     }
 }
 
@@ -201,20 +318,24 @@ impl<T: ToDep> ToDep for Vec<T> {
     }
 }
 
-pub(crate) struct RedirectRef<T, U> {
+#[derive(Clone, Trace, Finalize)]
+pub(crate) struct RedirectRef<T: Trace + Finalize, U: Trace + Finalize> {
     // Original ref
     pub(crate) primary: T,
     // Replacement for dep resolution
     pub(crate) redirect: Option<U>,
 }
 
-impl<T: Into<Node>, U: Into<Node>> ToDep for RedirectRef<T, U> {
+impl<
+    T: Clone + Trace + Finalize + Into<Node>,
+    U: Clone + Trace + Finalize + Into<Node>,
+> ToDep for RedirectRef<T, U> {
     fn dep(&self) -> Vec<Node> {
-        return vec![self.redirect.map(|x| x.into()).unwrap_or_else(|| self.primary.into())];
+        return vec![self.redirect.clone().map(|x| x.into()).unwrap_or_else(|| self.primary.clone().into())];
     }
 }
 
-impl<T, U> RedirectRef<T, U> {
+impl<T: Trace + Finalize, U: Trace + Finalize> RedirectRef<T, U> {
     pub(crate) fn new(v: T) -> Self {
         Self {
             primary: v,

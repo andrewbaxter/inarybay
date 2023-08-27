@@ -1,15 +1,15 @@
 use std::{
-    cell::{
-        RefCell,
-    },
-    rc::{
-        Rc,
-    },
     collections::{
         HashMap,
         BTreeMap,
         HashSet,
     },
+};
+use gc::{
+    Finalize,
+    Trace,
+    GcCell,
+    Gc,
 };
 use proc_macro2::{
     TokenStream,
@@ -31,39 +31,41 @@ use crate::{
     },
     util::{
         ToIdent,
-        S,
     },
     node_enum::NodeEnum,
 };
 
+#[derive(Trace, Finalize)]
 pub struct Schema_ {
-    next_id: usize,
+    seen_ids: HashSet<String>,
     pub(crate) objects: BTreeMap<String, Vec<Object>>,
-    pub(crate) enums: BTreeMap<String, Vec<S<NodeEnum>>>,
+    pub(crate) enums: BTreeMap<String, Vec<NodeEnum>>,
 }
 
 impl Schema_ {
-    pub(crate) fn take_id(&mut self) -> String {
-        let out = format!("x{}", self.next_id);
-        self.next_id += 1;
-        return out;
+    pub(crate) fn take_id(&mut self, id: String) -> String {
+        if !self.seen_ids.insert(id.clone()) {
+            panic!("Id {} already used", id);
+        }
+        return id;
     }
 }
 
-pub struct Schema(Rc<RefCell<Schema_>>);
+#[derive(Clone, Trace, Finalize)]
+pub struct Schema(pub(crate) Gc<GcCell<Schema_>>);
 
 impl Schema {
     pub fn new() -> Schema {
-        return Schema(Rc::new(RefCell::new(Schema_ {
-            next_id: 0,
+        return Schema(Gc::new(GcCell::new(Schema_ {
+            seen_ids: HashSet::new(),
             objects: BTreeMap::new(),
             enums: BTreeMap::new(),
         })));
     }
 
     /// Define a new de/serializable object.
-    pub fn object(&self, name: String) -> Object {
-        return Object::new(&self.0, name);
+    pub fn object(&self, id: impl Into<String>, name: String) -> Object {
+        return Object::new(id, &self, name);
     }
 
     /// Generate code for the described schema.
@@ -72,19 +74,19 @@ impl Schema {
 
         // Generate types
         let mut code = vec![];
-        for (name, enums) in self2.enums {
-            let mut first = enums.first().unwrap();
+        for (name, enums) in &self2.enums {
+            let first = enums.first().unwrap();
 
             // Make sure all definitions are consistent
             for other in &enums[1..] {
                 let mut other_variants = HashMap::new();
-                for v in other.borrow().variants {
+                for v in &other.0.borrow().variants {
                     other_variants.insert(v.var_name.to_string(), v.element.clone());
                 }
-                for first_v in first.borrow().variants {
+                for first_v in &first.0.borrow().variants {
                     if let Some(other_v) = other_variants.remove(&first_v.var_name) {
-                        let first_type = first_v.element.0.borrow().rust_root.borrow().type_name;
-                        let other_type = other_v.0.borrow().rust_root.borrow().type_name;
+                        let first_type = first_v.element.0.borrow().rust_root.0.borrow().type_name.clone();
+                        let other_type = other_v.0.borrow().rust_root.0.borrow().type_name.clone();
                         if first_type != other_type {
                             panic!(
                                 "Definitions of enum {} variant {} have mismatched types {} and {}",
@@ -104,12 +106,12 @@ impl Schema {
             }
 
             // Generate code
-            let enum2 = first.borrow();
-            let type_ident = enum2.type_name;
+            let enum2 = first.0.borrow();
+            let type_ident = &enum2.type_name;
             let mut variants = vec![];
             for v in &enum2.variants {
-                let var_ident = v.var_name;
-                let var_type_ident = v.element.0.borrow().rust_root.borrow().type_name.clone();
+                let var_ident = &v.var_name;
+                let var_type_ident = v.element.0.borrow().rust_root.0.borrow().type_name.clone();
                 variants.push(quote!{
                     #var_ident(#var_type_ident),
                 });
@@ -120,26 +122,31 @@ impl Schema {
                 }
             });
         }
-        for (name, objs) in self2.objects {
-            let mut first = objs.first().unwrap();
+        for (name, objs) in &self2.objects {
+            let first = objs.first().unwrap();
 
             // Make sure all definitions are consistent
             for other in &objs[1..] {
                 let other2 = other.0.borrow();
-                let other = other2.rust_root.borrow();
+                let other = other2.rust_root.0.borrow();
                 let first = first.0.borrow();
                 let mut other_fields = HashMap::new();
-                for f in other.fields {
-                    let f = f.borrow();
-                    other_fields.insert(f.field_name, f.serial.redirect.unwrap_or(f.serial.primary));
+                for f in &other.fields {
+                    let f = f.0.borrow();
+                    let f_serial = f.serial.as_ref().unwrap();
+                    other_fields.insert(
+                        f.field_name.clone(),
+                        f_serial.redirect.clone().unwrap_or_else(|| f_serial.primary.clone()),
+                    );
                 }
-                for first_f in first.rust_root.borrow().fields {
-                    let first_f = first_f.borrow();
+                for first_f in &first.rust_root.0.borrow().fields {
+                    let first_f = first_f.0.borrow();
                     if let Some(other_f_value) = other_fields.remove(&first_f.field_name) {
-                        match NodeSameVariant::pairs(&*other_f_value.0, &*first_f.serial.primary.0) {
+                        let first_f_serial = first_f.serial.as_ref().unwrap();
+                        match NodeSameVariant::pairs(&other_f_value.0, &first_f_serial.primary.0) {
                             NodeSameVariant::Int(l, r) => {
-                                let l = l.borrow();
-                                let r = r.borrow();
+                                let l = l.0.borrow();
+                                let r = r.0.borrow();
                                 if l.rust_type.to_string() != r.rust_type.to_string() {
                                     panic!(
                                         "Definitions of {} field {} have mismatched rust types {} and {}",
@@ -151,9 +158,9 @@ impl Schema {
                                 }
                             },
                             NodeSameVariant::DynamicBytes(_, _) => { },
-                            NodeSameVariant::Array(l, r) => {
-                                let l_type = l.borrow().element.0.borrow().rust_root.borrow().type_name;
-                                let r_type = r.borrow().element.0.borrow().rust_root.borrow().type_name;
+                            NodeSameVariant::DynamicArray(l, r) => {
+                                let l_type = l.0.borrow().element.0.borrow().rust_root.0.borrow().type_name.clone();
+                                let r_type = r.0.borrow().element.0.borrow().rust_root.0.borrow().type_name.clone();
                                 if l_type != r_type {
                                     panic!(
                                         "Definitions of {} field {} have mismatched array element types {} and {}",
@@ -165,10 +172,10 @@ impl Schema {
                                 }
                             },
                             NodeSameVariant::Enum(l, r) => {
-                                let l = l.borrow();
-                                let r = r.borrow();
-                                let l_type = l.type_name;
-                                let r_type = r.type_name;
+                                let l = l.0.borrow();
+                                let r = r.0.borrow();
+                                let l_type = &l.type_name;
+                                let r_type = &r.type_name;
                                 if l_type != r_type {
                                     panic!(
                                         "Definitions of {} field {} have mismatched enum inner types {} and {}",
@@ -179,13 +186,13 @@ impl Schema {
                                     );
                                 }
                                 let mut l_variants = HashMap::new();
-                                for v in l.variants {
-                                    l_variants.insert(v.var_name.to_string(), v.element);
+                                for v in &l.variants {
+                                    l_variants.insert(v.var_name.to_string(), v.element.clone());
                                 }
-                                for v in r.variants {
+                                for v in &r.variants {
                                     if let Some(l_v) = l_variants.remove(&v.var_name.to_string()) {
-                                        let l_type = l_v.0.borrow().rust_root.borrow().type_name;
-                                        let r_type = v.element.0.borrow().rust_root.borrow().type_name;
+                                        let l_type = l_v.0.borrow().rust_root.0.borrow().type_name.clone();
+                                        let r_type = v.element.0.borrow().rust_root.0.borrow().type_name.clone();
                                         if l_type != r_type {
                                             panic!(
                                                 "Definitions of {} enum field {} variant {} have mismatched inner types {} and {}",
@@ -225,22 +232,22 @@ impl Schema {
                 }
             }
             let obj2 = first.0.borrow();
-            let obj_obj = obj2.rust_root.borrow();
+            let obj_obj = obj2.rust_root.0.borrow();
 
             // Generate code
-            let type_ident = obj_obj.type_name;
+            let type_ident = &obj_obj.type_name;
             let mut fields = vec![];
             for f in &obj_obj.fields {
-                let f = f.borrow();
-                let field_ident = f.field_name;
-                let field_type = match &*f.serial.primary.0 {
-                    Node_::Int(n) => n.borrow().rust_type.to_token_stream(),
+                let f = f.0.borrow();
+                let field_ident = &f.field_name;
+                let field_type = match &f.serial.as_ref().unwrap().primary.0 {
+                    Node_::Int(n) => n.0.borrow().rust_type.to_token_stream(),
                     Node_::DynamicBytes(_) => quote!(std:: vec:: Vec < u8 >),
-                    Node_::Array(n) => {
-                        let inner = n.borrow().element.0.borrow().rust_root.borrow().type_name.clone();
+                    Node_::DynamicArray(n) => {
+                        let inner = n.0.borrow().element.0.borrow().rust_root.0.borrow().type_name.clone();
                         quote!(std:: vec:: Vec < #inner >)
                     },
-                    Node_::Enum(n) => n.borrow().type_name.into_token_stream(),
+                    Node_::Enum(n) => n.0.borrow().type_name.ident().into_token_stream(),
                     _ => unreachable!(),
                 };
                 fields.push(quote!{
@@ -258,10 +265,10 @@ impl Schema {
             let root = first;
             let root = root.0.borrow();
             if root.has_external_deps {
-                let root_obj = root.rust_root.borrow();
+                let root_obj = root.rust_root.0.borrow();
                 let obj_ident = root_obj.id.ident();
-                let serial_ident = root.serial_root.borrow().id.ident();
-                let methods = vec![];
+                let serial_ident = root.serial_root.0.borrow().id.ident();
+                let mut methods = vec![];
                 if write {
                     let code = generate_write(&root);
                     methods.push(quote!{
@@ -279,7 +286,7 @@ impl Schema {
                         }
                     });
                 }
-                let type_ident = root_obj.type_name;
+                let type_ident = &root_obj.type_name.ident();
                 code.push(quote!(impl #type_ident {
                     #(#methods) *
                 }));
@@ -290,11 +297,10 @@ impl Schema {
 }
 
 pub(crate) fn generate_read(obj: &Object_) -> TokenStream {
-    let obj_obj = obj.rust_root.borrow();
     let mut seen = HashSet::new();
     let mut stack: Vec<(Node, bool)> = vec![];
-    for c in obj.rust_const_roots {
-        stack.push((c.into(), false));
+    for c in &obj.rust_const_roots {
+        stack.push((c.clone().into(), false));
     }
     let mut code = vec![];
     while let Some((node, first_visit)) = stack.pop() {
@@ -306,8 +312,8 @@ pub(crate) fn generate_read(obj: &Object_) -> TokenStream {
             seen.insert(node_id);
 
             // Visit deps, then visit this node again
-            stack.push((node, true));
-            for dep in node.0.read_deps() {
+            stack.push((node.clone(), true));
+            for dep in node.0.gather_read_deps() {
                 stack.push((dep, false));
             }
         } else {
@@ -323,7 +329,7 @@ pub(crate) fn generate_write(obj: &Object_) -> TokenStream {
     // segment/serial root)
     let mut seen = HashSet::new();
     let mut stack: Vec<(Node, bool)> = vec![];
-    stack.push((obj.serial_root.into(), false));
+    stack.push((obj.serial_root.clone().into(), false));
     let mut code = vec![];
     while let Some((node, first_visit)) = stack.pop() {
         if first_visit {
@@ -334,16 +340,16 @@ pub(crate) fn generate_write(obj: &Object_) -> TokenStream {
             seen.insert(node_id);
 
             // Prep before visiting deps
-            match &*node.0 {
+            match &node.0 {
                 Node_::FixedBytes(n) => {
-                    code.push(n.borrow().generate_pre_write());
+                    code.push(n.0.borrow().generate_pre_write());
                 },
                 _ => { },
             }
 
             // Visit deps, then visit this node again
-            stack.push((node, true));
-            for dep in node.0.write_deps() {
+            stack.push((node.clone(), true));
+            for dep in node.0.gather_write_deps() {
                 stack.push((dep, false));
             }
         } else {

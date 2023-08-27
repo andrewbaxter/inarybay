@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     ops::{
         Add,
         Sub,
@@ -8,11 +7,19 @@ use std::{
     },
     fmt::Display,
 };
+use gc::{
+    GcCell,
+    Gc,
+    Trace,
+    Finalize,
+};
 use proc_macro2::Ident;
 use quote::{
     IdentFragment,
     format_ident,
 };
+
+pub(crate) type LateInit<T> = Option<T>;
 
 pub(crate) trait ToIdent {
     fn ident(&self) -> Ident;
@@ -24,10 +31,10 @@ impl<T: IdentFragment> ToIdent for T {
     }
 }
 
-pub(crate) type S<T> = &'static RefCell<T>;
+pub(crate) type S<T> = Gc<GcCell<T>>;
 
-pub(crate) fn new_s<T>(t: T) -> S<T> {
-    return Box::leak(Box::new(RefCell::new(t)));
+pub(crate) fn new_s<T: Finalize + Trace>(t: T) -> S<T> {
+    return Gc::new(GcCell::new(t));
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -35,6 +42,20 @@ pub(crate) struct BVec {
     pub(crate) bytes: usize,
     /// Excess of bytes
     pub(crate) bits: usize,
+}
+
+unsafe impl Trace for BVec {
+    unsafe fn trace(&self) { }
+
+    unsafe fn root(&self) { }
+
+    unsafe fn unroot(&self) { }
+
+    fn finalize_glue(&self) { }
+}
+
+impl Finalize for BVec {
+    fn finalize(&self) { }
 }
 
 impl BVec {

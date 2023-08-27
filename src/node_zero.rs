@@ -1,3 +1,7 @@
+use gc::{
+    Finalize,
+    Trace,
+};
 use proc_macro2::TokenStream;
 use quote::quote;
 use crate::{
@@ -6,18 +10,25 @@ use crate::{
         RedirectRef,
         NodeMethods,
         ToDep,
+        NodeMethods_,
     },
-    util::ToIdent,
+    util::{
+        ToIdent,
+        S,
+    },
+    object::Object,
+    derive_forward_node_methods,
 };
 
-pub(crate) struct NodeZero {
+#[derive(Trace, Finalize)]
+pub(crate) struct NodeZero_ {
     pub(crate) id: String,
     // Bytes (fixed or ?)
     pub(crate) serial: RedirectRef<Node, Node>,
 }
 
-impl NodeMethods for NodeZero {
-    fn read_deps(&self) -> Vec<Node> {
+impl NodeMethods_ for NodeZero_ {
+    fn gather_read_deps(&self) -> Vec<Node> {
         return self.serial.dep();
     }
 
@@ -32,7 +43,7 @@ impl NodeMethods for NodeZero {
         };
     }
 
-    fn write_deps(&self) -> Vec<Node> {
+    fn gather_write_deps(&self) -> Vec<Node> {
         return vec![];
     }
 
@@ -40,4 +51,27 @@ impl NodeMethods for NodeZero {
         // All buffers are 0-initialized anyway, do nothing
         return quote!();
     }
+
+    fn set_rust(&mut self, _rust: Node) {
+        unreachable!();
+    }
+
+    fn scope(&self) -> Object {
+        unreachable!();
+    }
+
+    fn id(&self) -> String {
+        return self.id.clone();
+    }
 }
+
+#[derive(Clone, Trace, Finalize)]
+pub(crate) struct NodeZero(pub(crate) S<NodeZero_>);
+
+impl Into<Node> for NodeZero {
+    fn into(self) -> Node {
+        return Node(crate::node::Node_::Zero(self));
+    }
+}
+
+derive_forward_node_methods!(NodeZero);
