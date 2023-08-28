@@ -59,10 +59,16 @@ impl NodeMethods for NodeDynamicArray_ {
         let elem_type_ident = self.element.0.rust_root.0.type_name.ident();
         let elem_ident = self.element.0.id.ident();
         let do_await = gen_ctx.do_await(&elem_ident);
+        let method;
+        if gen_ctx.async_ {
+            method = quote!(read_async);
+        } else {
+            method = quote!(read);
+        }
         return quote!{
             let mut #dest_ident = vec ![];
             for _ in 0..#source_len_ident {
-                let #elem_ident = #elem_type_ident:: read(#source_ident);
+                let #elem_ident = #elem_type_ident:: #method(#source_ident);
                 //. .
                 #do_await 
                 //. .
@@ -83,11 +89,17 @@ impl NodeMethods for NodeDynamicArray_ {
         let dest_ident = self.serial.0.id.ident();
         let res_ident = "res__".ident();
         let do_await = gen_ctx.do_await(&res_ident);
+        let method;
+        if gen_ctx.async_ {
+            method = quote!(write_async);
+        } else {
+            method = quote!(write);
+        }
         return quote!{
             let #dest_len_ident = #source_len_ident.len() as #dest_len_type;
             let mut #dest_ident = vec ![];
             for e in #source_len_ident {
-                let #res_ident = e.write(& mut #dest_ident);
+                let #res_ident = e.#method(& mut #dest_ident);
                 //. .
                 #do_await 
                 //. .

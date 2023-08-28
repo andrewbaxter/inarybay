@@ -22,7 +22,7 @@ pub fn generate() {
             read: true,
             write: true,
             sync_: true,
-            async_: false,
+            async_: true,
             low_heap: false,
         }).to_string();
         match genemichaels::format_str(&ts, &genemichaels::FormatConfig::default()) {

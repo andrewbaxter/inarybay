@@ -1,3 +1,11 @@
+#[cfg(feature = "async")]
+pub mod prelude_async {
+    pub use futures::io::{
+        AsyncReadExt,
+        AsyncWriteExt,
+    };
+}
+
 pub mod lowheap_error {
     pub trait ReadErrCtx<T> {
         fn errorize(self, text: &'static str) -> Result<T, &'static str>;

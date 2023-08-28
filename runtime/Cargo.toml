@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+futures = { version = "*", optional = true }
+
+[features]
+default = []
+async = ["dep:futures"]

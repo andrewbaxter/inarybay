@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-inarybay-runtime = { version = "*", path = "../runtime" }
+futures = "0.3.28"
+inarybay-runtime = { version = "*", path = "../runtime", features = ["async"] }
+tokio = { version = "1.32.0", features = ["macros", "rt"] }
 
 [build-dependencies]
 crate_tests_build = { version = "*", path = "../crate_tests_build" }

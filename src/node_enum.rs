@@ -85,8 +85,14 @@ impl NodeMethods for NodeEnum_ {
             if self.mut_.borrow().external_deps.is_empty() {
                 let elem_type_ident = v.element.0.rust_root.0.type_name.ident();
                 let do_await = gen_ctx.do_await(&elem_ident);
+                let method;
+                if gen_ctx.async_ {
+                    method = quote!(read_async);
+                } else {
+                    method = quote!(read);
+                }
                 elem_code = quote!{
-                    let #elem_ident = #elem_type_ident:: read(#source_ident);
+                    let #elem_ident = #elem_type_ident:: #method(#source_ident);
                     //. .
                     #do_await 
                     //. .
@@ -149,8 +155,14 @@ impl NodeMethods for NodeEnum_ {
             if self.mut_.borrow().external_deps.is_empty() {
                 let res_ident = "res__".ident();
                 let do_await = gen_ctx.do_await(&res_ident);
+                let method;
+                if gen_ctx.async_ {
+                    method = quote!(write_async);
+                } else {
+                    method = quote!(write);
+                }
                 elem_code = quote!{
-                    let #res_ident = #elem_source_ident.write(& mut #elem_dest_ident);
+                    let #res_ident = #elem_source_ident.#method(& mut #elem_dest_ident);
                     //. .
                     #do_await 
                     //. .

@@ -109,7 +109,7 @@ impl GenerateContext {
     pub(crate) fn do_await(&self, ident: &Ident) -> TokenStream {
         match self.async_ {
             true => return quote!{
-                #ident = #ident.await;
+                let #ident = #ident.await;
             },
             false => return quote!(),
         }
@@ -348,8 +348,8 @@ impl Schema {
                         let code = generate_read(&gen_ctx, &root.0);
                         let err_ident = gen_ctx.read_err_type();
                         methods.push(quote!{
-                            pub async fn read_async(
-                                #serial_ident:& mut dyn tokio:: io:: AsyncReadExt
+                            pub async fn read_async < R: inarybay_runtime:: prelude_async:: AsyncReadExt + std:: marker:: Unpin >(
+                                #serial_ident:& mut R
                             ) -> Result < Self,
                             #err_ident > {
                                 #code return Ok(#obj_ident);
@@ -380,9 +380,9 @@ impl Schema {
                         };
                         let code = generate_write(&gen_ctx, &root.0);
                         methods.push(quote!{
-                            pub async fn write_async(
+                            pub async fn write_async < W: inarybay_runtime:: prelude_async:: AsyncWriteExt + std:: marker:: Unpin >(
                                 &self,
-                                mut #serial_ident:& mut dyn tokio:: io:: AsyncWriteExt
+                                #serial_ident:& mut W
                             ) -> std:: io:: Result <() > {
                                 let #obj_ident = self;
                                 #code 
@@ -400,15 +400,15 @@ impl Schema {
                 });
             }
         }
-        let imports;
+        let use_err;
         match config.low_heap {
             true => {
-                imports = quote!{
+                use_err = quote!{
                     use inarybay_runtime::lowheap_error::ReadErrCtx;
                 };
             },
             false => {
-                imports = quote!{
+                use_err = quote!{
                     use inarybay_runtime::error::ReadErrCtx;
                 };
             },
@@ -425,7 +425,7 @@ impl Schema {
                 )
             ] 
             //. .
-            #imports 
+            #use_err 
             //. .
             #(#code) *
         };
