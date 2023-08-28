@@ -11,11 +11,16 @@ use gc::{
     Trace,
     Finalize,
 };
-use proc_macro2::Ident;
+use proc_macro2::{
+    Ident,
+    TokenStream,
+};
 use quote::{
     IdentFragment,
     format_ident,
+    quote,
 };
+use crate::schema::GenerateContext;
 
 pub(crate) type LateInit<T> = Option<T>;
 
@@ -139,5 +144,35 @@ macro_rules! breaker{
         $l loop {
             $b break;
         }
+    };
+}
+
+pub(crate) fn generate_basic_read(
+    gen_ctx: &GenerateContext,
+    node: &str,
+    dest_ident: Ident,
+    source_ident: Ident,
+    source_len: TokenStream,
+) -> TokenStream {
+    let method;
+    if gen_ctx.async_ {
+        method = quote!(inarybay_runtime::async_::read);
+    } else {
+        method = quote!(inarybay_runtime::read);
+    }
+    let read = gen_ctx.wrap_read(node, quote!(#method(#source_ident, #source_len)));
+    return quote!{
+        let #dest_ident = #read;
+    };
+}
+
+pub(crate) fn generate_basic_write(
+    gen_ctx: &GenerateContext,
+    source_ident: Ident,
+    serial_ident: Ident,
+) -> TokenStream {
+    let write = gen_ctx.wrap_write(quote!(#serial_ident.write_all(& #source_ident)));
+    return quote!{
+        #write;
     };
 }

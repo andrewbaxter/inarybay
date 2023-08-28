@@ -57,22 +57,17 @@ impl NodeMethods for NodeDynamicArray_ {
         let source_len_ident = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id.ident();
         let source_ident = self.serial.0.serial_root.0.id.ident();
         let elem_type_ident = self.element.0.rust_root.0.type_name.ident();
-        let elem_ident = self.element.0.id.ident();
-        let do_await = gen_ctx.do_await(&elem_ident);
         let method;
         if gen_ctx.async_ {
             method = quote!(read_async);
         } else {
             method = quote!(read);
         }
+        let read = gen_ctx.wrap_read(&self.id, quote!(#elem_type_ident:: #method(#source_ident)));
         return quote!{
             let mut #dest_ident = vec ![];
             for _ in 0..#source_len_ident {
-                let #elem_ident = #elem_type_ident:: #method(#source_ident);
-                //. .
-                #do_await 
-                //. .
-                #dest_ident.push(#elem_ident ?);
+                #dest_ident.push(#read);
             }
         };
     }
@@ -87,23 +82,18 @@ impl NodeMethods for NodeDynamicArray_ {
         let dest_len_ident = len.id.ident();
         let dest_len_type = &len.rust_type;
         let dest_ident = self.serial.0.id.ident();
-        let res_ident = "res__".ident();
-        let do_await = gen_ctx.do_await(&res_ident);
         let method;
         if gen_ctx.async_ {
             method = quote!(write_async);
         } else {
             method = quote!(write);
         }
+        let write = gen_ctx.wrap_write(quote!(e.#method(& mut #dest_ident)));
         return quote!{
             let #dest_len_ident = #source_len_ident.len() as #dest_len_type;
             let mut #dest_ident = vec ![];
             for e in #source_len_ident {
-                let #res_ident = e.#method(& mut #dest_ident);
-                //. .
-                #do_await 
-                //. .
-                #res_ident ?;
+                #write;
             }
         };
     }

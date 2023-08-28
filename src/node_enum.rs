@@ -84,19 +84,15 @@ impl NodeMethods for NodeEnum_ {
             let elem_code;
             if self.mut_.borrow().external_deps.is_empty() {
                 let elem_type_ident = v.element.0.rust_root.0.type_name.ident();
-                let do_await = gen_ctx.do_await(&elem_ident);
                 let method;
                 if gen_ctx.async_ {
                     method = quote!(read_async);
                 } else {
                     method = quote!(read);
                 }
+                let read = gen_ctx.wrap_read(&self.id, quote!(#elem_type_ident:: #method(#source_ident)));
                 elem_code = quote!{
-                    let #elem_ident = #elem_type_ident:: #method(#source_ident);
-                    //. .
-                    #do_await 
-                    //. .
-                    let #elem_ident = #elem_ident ?;
+                    let #elem_ident = #read;
                 }
             } else {
                 elem_code = generate_read(gen_ctx, &v.element.0);
@@ -153,20 +149,15 @@ impl NodeMethods for NodeEnum_ {
             let elem_dest_ident = v.element.0.serial_root.0.id.ident();
             let elem_code;
             if self.mut_.borrow().external_deps.is_empty() {
-                let res_ident = "res__".ident();
-                let do_await = gen_ctx.do_await(&res_ident);
                 let method;
                 if gen_ctx.async_ {
                     method = quote!(write_async);
                 } else {
                     method = quote!(write);
                 }
+                let write = gen_ctx.wrap_write(quote!(#elem_source_ident.#method(& mut #elem_dest_ident)));
                 elem_code = quote!{
-                    let #res_ident = #elem_source_ident.#method(& mut #elem_dest_ident);
-                    //. .
-                    #do_await 
-                    //. .
-                    #res_ident ?;
+                    #write;
                 };
             } else {
                 elem_code = generate_write(gen_ctx, &v.element.0);

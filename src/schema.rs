@@ -13,7 +13,6 @@ use gc::{
 };
 use proc_macro2::{
     TokenStream,
-    Ident,
 };
 use quote::{
     quote,
@@ -74,20 +73,27 @@ impl GenerateContext {
         }
     }
 
-    pub(crate) fn do_raise_err(&self, ident: &Ident, node: &str) -> TokenStream {
+    pub(crate) fn wrap_read(&self, node: &str, mut read: TokenStream) -> TokenStream {
+        if self.async_ {
+            read = quote!(#read.await);
+        }
         match self.low_heap {
             true => {
                 let text = format!("Error parsing in node {}", node);
-                return quote!{
-                    let #ident = #ident.errorize(#text) ?;
-                };
+                read = quote!(#read.errorize(#text) ?);
             },
             false => {
-                return quote!{
-                    let #ident = #ident.errorize(#node) ?;
-                };
+                read = quote!(#read.errorize(#node) ?);
             },
         }
+        return read;
+    }
+
+    pub(crate) fn wrap_write(&self, mut write: TokenStream) -> TokenStream {
+        if self.async_ {
+            write = quote!(#write.await);
+        }
+        return quote!(#write ?);
     }
 
     pub(crate) fn new_read_err(&self, node: &str, text: TokenStream) -> TokenStream {
@@ -103,15 +109,6 @@ impl GenerateContext {
                     inner: #text
                 });
             },
-        }
-    }
-
-    pub(crate) fn do_await(&self, ident: &Ident) -> TokenStream {
-        match self.async_ {
-            true => return quote!{
-                let #ident = #ident.await;
-            },
-            false => return quote!(),
         }
     }
 }
@@ -336,7 +333,9 @@ impl Schema {
                         methods.push(quote!{
                             pub fn read(#serial_ident:& mut dyn std:: io:: Read) -> Result < Self,
                             #err_ident > {
-                                #code return Ok(#obj_ident);
+                                #code 
+                                //. .
+                                return Ok(#obj_ident);
                             }
                         });
                     }
@@ -348,11 +347,13 @@ impl Schema {
                         let code = generate_read(&gen_ctx, &root.0);
                         let err_ident = gen_ctx.read_err_type();
                         methods.push(quote!{
-                            pub async fn read_async < R: inarybay_runtime:: prelude_async:: AsyncReadExt + std:: marker:: Unpin >(
+                            pub async fn read_async < R: inarybay_runtime:: async_:: AsyncReadExt + std:: marker:: Unpin >(
                                 #serial_ident:& mut R
                             ) -> Result < Self,
                             #err_ident > {
-                                #code return Ok(#obj_ident);
+                                #code 
+                                //. .
+                                return Ok(#obj_ident);
                             }
                         });
                     }
@@ -367,6 +368,7 @@ impl Schema {
                         methods.push(quote!{
                             pub fn write(&self, #serial_ident:& mut dyn std:: io:: Write) -> std:: io:: Result <() > {
                                 let #obj_ident = self;
+                                //. .
                                 #code 
                                 //. .
                                 return Ok(());
@@ -380,11 +382,12 @@ impl Schema {
                         };
                         let code = generate_write(&gen_ctx, &root.0);
                         methods.push(quote!{
-                            pub async fn write_async < W: inarybay_runtime:: prelude_async:: AsyncWriteExt + std:: marker:: Unpin >(
+                            pub async fn write_async < W: inarybay_runtime:: async_:: AsyncWriteExt + std:: marker:: Unpin >(
                                 &self,
                                 #serial_ident:& mut W
                             ) -> std:: io:: Result <() > {
                                 let #obj_ident = self;
+                                //. .
                                 #code 
                                 //. .
                                 return Ok(());

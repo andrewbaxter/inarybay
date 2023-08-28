@@ -15,6 +15,7 @@ use crate::{
     },
     util::{
         ToIdent,
+        generate_basic_write,
     },
     object::Object,
     derive_forward_node_methods,
@@ -112,19 +113,7 @@ impl NodeMethods for NodeSerialSegment_ {
     }
 
     fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let serial_ident = self.serial_root.0.id.ident();
-        let ident = self.id.ident();
-        let res_ident = "res__".ident();
-        let do_await = gen_ctx.do_await(&res_ident);
-        return quote!{
-            let #res_ident = #serial_ident.write(& #ident);
-            //. .
-            #do_await 
-            //. .
-            let #res_ident = #res_ident ?;
-            drop(#res_ident);
-            drop(#ident);
-        }
+        return generate_basic_write(gen_ctx, self.id.ident(), self.serial_root.0.id.ident());
     }
 
     fn set_rust(&self, _rust: Node) {

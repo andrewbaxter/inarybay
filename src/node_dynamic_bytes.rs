@@ -22,12 +22,12 @@ use crate::{
     util::{
         ToIdent,
         LateInit,
+        generate_basic_read,
     },
     node_int::NodeInt,
     object::Object,
     derive_forward_node_methods,
     schema::GenerateContext,
-    node_fixed_range::generate_read_bytes,
 };
 
 #[derive(Trace, Finalize)]
@@ -55,15 +55,13 @@ impl NodeMethods for NodeDynamicBytes_ {
     }
 
     fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let source_ident = self.serial.0.serial_root.0.id.ident();
-        let source_len_ident = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id.ident();
-        let dest_ident = self.id.ident();
-        return generate_read_bytes(
+        let len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id.ident().to_token_stream();
+        return generate_basic_read(
             gen_ctx,
             &self.id,
-            &source_ident,
-            &dest_ident,
-            source_len_ident.into_token_stream(),
+            self.id.ident(),
+            self.serial.0.serial_root.0.id.ident(),
+            quote!(#len as usize),
         );
     }
 

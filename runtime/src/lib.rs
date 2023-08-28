@@ -1,9 +1,25 @@
+pub fn read(source: &mut dyn std::io::Read, len: usize) -> std::io::Result<Vec<u8>> {
+    let mut out = vec![];
+    out.resize(len, 0u8);
+    source.read_exact(&mut out)?;
+    return Ok(out);
+}
+
 #[cfg(feature = "async")]
-pub mod prelude_async {
+pub mod async_ {
     pub use futures::io::{
         AsyncReadExt,
         AsyncWriteExt,
     };
+
+    pub async fn read<
+        T: futures::io::AsyncReadExt + Unpin,
+    >(source: &mut T, len: usize) -> std::io::Result<Vec<u8>> {
+        let mut out = vec![];
+        out.resize(len, 0u8);
+        source.read_exact(&mut out).await?;
+        return Ok(out);
+    }
 }
 
 pub mod lowheap_error {
