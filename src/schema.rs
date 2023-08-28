@@ -414,7 +414,16 @@ impl Schema {
             },
         }
         return quote!{
-            #![allow(non_snake_case, dropping_copy_types, dropping_references, unused_mut, unused_variables)] 
+            #![
+                allow(
+                    non_snake_case,
+                    dropping_copy_types,
+                    dropping_references,
+                    unused_mut,
+                    unused_variables,
+                    unused_parens,
+                )
+            ] 
             //. .
             #imports 
             //. .

@@ -21,8 +21,8 @@ macro_rules! round_trip{
             let start = $e;
             let mut bytes = vec![];
             start.write(&mut bytes).unwrap();
-            let end =< $t >:: read(&mut Cursor::new(bytes)).unwrap();
-            assert_eq!(start, end);
+            let end =< $t >:: read(&mut Cursor::new(&bytes)).unwrap();
+            assert_eq!(start, end, "Round trip failed; intermediate: {:?}", bytes);
         }
     };
 }

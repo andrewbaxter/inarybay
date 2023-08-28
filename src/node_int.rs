@@ -88,7 +88,7 @@ impl NodeMethods for NodeInt_ {
             for _ in 0 .. self.len.bits {
                 serial_mask = serial_mask * 2 + 1;
             }
-            out = quote!(#out & #serial_mask);
+            out = quote!((#out & #serial_mask));
             let rust_type = &self.rust_type;
             return quote!{
                 let #dest_ident = #rust_type:: from_ne_bytes([#out]);
@@ -115,21 +115,39 @@ impl NodeMethods for NodeInt_ {
                     Endian::Big => {
                         let endian_pad_offset = rust_bytes - serial_bytes;
                         out = quote!({
-                            let mut temp =[
-                                0u8;
-                                #rust_bytes
-                            ];
-                            temp[#endian_pad_offset..#rust_bytes].copy_from_slice(& #out);
+                            let #source_ident =& #out;
+                            let mut temp = if #source_ident[0] &(1u8 << 7) > 0 {
+                                [
+                                    255u8;
+                                    #rust_bytes
+                                ]
+                            }
+                            else {
+                                [
+                                    0u8;
+                                    #rust_bytes
+                                ]
+                            };
+                            temp[#endian_pad_offset..#rust_bytes].copy_from_slice(& #source_ident);
                             temp
                         });
                     },
                     Endian::Little => {
                         out = quote!({
-                            let mut temp =[
-                                0u8;
-                                #rust_bytes
-                            ];
-                            temp[0..#serial_bytes].copy_from_slice(& #out);
+                            let #source_ident =& #out;
+                            let mut temp = if #source_ident[#serial_bytes - 1] &(1u8 << 7) > 0 {
+                                [
+                                    255u8;
+                                    #rust_bytes
+                                ]
+                            }
+                            else {
+                                [
+                                    0u8;
+                                    #rust_bytes
+                                ]
+                            };
+                            temp[0..#serial_bytes].copy_from_slice(& #source_ident);
                             temp
                         });
                     },
@@ -158,10 +176,10 @@ impl NodeMethods for NodeInt_ {
             for _ in 0 .. self.len.bits {
                 serial_mask = serial_mask * 2 + 1;
             }
-            let mut out = quote!(u8:: from_ne_bytes([* #source_ident]) & #serial_mask);
+            let mut out = quote!((u8:: from_ne_bytes([* #source_ident]) & #serial_mask));
             let serial_offset = self.start.bits;
             if serial_offset > 0 {
-                out = quote!(#out << #serial_offset);
+                out = quote!((#out << #serial_offset));
             }
             let serial_start = self.start.bytes;
             return quote!{
