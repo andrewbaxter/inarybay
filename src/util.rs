@@ -191,8 +191,8 @@ pub(crate) fn generate_delimited_read(
 
 pub(crate) fn generate_basic_write(
     gen_ctx: &GenerateContext,
-    source_ident: Ident,
-    serial_ident: Ident,
+    source_ident: &Ident,
+    serial_ident: &Ident,
 ) -> TokenStream {
     let offset_ident = offset_ident();
     let write = gen_ctx.wrap_write(quote!(#serial_ident.write_all(& #source_ident)));

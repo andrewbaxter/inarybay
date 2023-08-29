@@ -16,6 +16,7 @@ use crate::{
     util::{
         ToIdent,
         generate_basic_write,
+        offset_ident,
     },
     object::Object,
     derive_forward_node_methods,
@@ -117,7 +118,27 @@ impl NodeMethods for NodeSerialSegment_ {
     }
 
     fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        return generate_basic_write(gen_ctx, self.id.ident(), self.serial_root.0.id.ident());
+        if let Some(rust) = self.mut_.borrow().rust.as_ref() {
+            match &rust.0 {
+                crate::node::Node_::Align(align) => {
+                    let align_ident = "align__".ident();
+                    let align_ident2 = "align__2".ident();
+                    let alignment = align.0.alignment;
+                    let offset_ident = offset_ident();
+                    let align_write = generate_basic_write(gen_ctx, &align_ident2, &self.serial_root.0.id.ident());
+                    return quote!{
+                        let #align_ident = #alignment -(#offset_ident % #alignment);
+                        if #align_ident > 0 {
+                            let mut #align_ident2 = vec ![];
+                            #align_ident2.resize(#align_ident, 0u8);
+                            #align_write
+                        }
+                    };
+                },
+                _ => { },
+            }
+        }
+        return generate_basic_write(gen_ctx, &self.id.ident(), &self.serial_root.0.id.ident());
     }
 
     fn set_rust(&self, _rust: Node) {

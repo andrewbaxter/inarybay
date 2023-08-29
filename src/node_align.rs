@@ -32,7 +32,7 @@ pub(crate) struct NodeAlign_ {
     pub(crate) id: String,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
-    pub(crate) multiple: usize,
+    pub(crate) alignment: usize,
 }
 
 impl NodeMethods for NodeAlign_ {
@@ -53,7 +53,7 @@ impl NodeMethods for NodeAlign_ {
                 self.serial.0.serial_root.0.id.ident(),
                 quote!(#len_ident),
             );
-        let multiple = self.multiple;
+        let multiple = self.alignment;
         let offset_ident = offset_ident();
         return quote!{
             let #len_ident = #multiple -(#offset_ident % #multiple);
@@ -70,13 +70,7 @@ impl NodeMethods for NodeAlign_ {
     }
 
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let dest_ident = self.serial.0.id.ident();
-        let multiple = self.multiple;
-        let offset_ident = offset_ident();
-        return quote!{
-            let mut #dest_ident = vec ![];
-            #dest_ident.resize(#multiple -(#offset_ident % #multiple), 0u8);
-        };
+        return quote!();
     }
 
     fn set_rust(&self, _rust: Node) {

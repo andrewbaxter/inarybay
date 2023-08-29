@@ -412,16 +412,7 @@ impl Schema {
         }
         let imports: Vec<TokenStream> = self.0.borrow().imports.values().cloned().collect();
         return quote!{
-            #![
-                allow(
-                    non_snake_case,
-                    dropping_copy_types,
-                    dropping_references,
-                    unused_mut,
-                    unused_variables,
-                    unused_parens,
-                )
-            ] 
+            #![allow(warnings, unused)] 
             //. .
             #(#imports) * 
             //. .

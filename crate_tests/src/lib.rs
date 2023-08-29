@@ -1,5 +1,3 @@
-use std::io::Cursor;
-
 mod gen_fixed_bytes;
 mod gen_int_singlebyte;
 mod gen_int_signed;
@@ -34,7 +32,7 @@ macro_rules! round_trip{
             if mid.len() > 0 {
                 assert_eq!(bytes, mid, "Written data doesn't quite match the expected serialized bytes");
             }
-            let end =< $t >:: read(&mut Cursor::new(&bytes)).unwrap();
+            let end =< $t >:: read(&mut std::io::Cursor::new(&bytes)).unwrap();
             assert_eq!(start, end, "Round trip failed; intermediate: {:?}", bytes);
         }
         #[tokio::test] async fn $asynctest() {

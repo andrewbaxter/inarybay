@@ -367,7 +367,7 @@ impl Object {
             id: self.take_id(id),
             serial_before: self.0.serial_root.0.mut_.borrow().sub_segments.last().cloned(),
             serial: seg.clone(),
-            multiple: multiple,
+            alignment: multiple,
         }));
         seg.0.mut_.borrow_mut().rust = Some(serial.clone().into());
         self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(serial.clone().into());
