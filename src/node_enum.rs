@@ -37,6 +37,72 @@ use crate::{
 };
 
 #[derive(Trace, Finalize)]
+pub(crate) struct NodeEnumDummyMut_ {
+    pub(crate) rust: Option<Node>,
+}
+
+#[derive(Trace, Finalize)]
+pub(crate) struct NodeEnumDummy_ {
+    pub(crate) scope: Object,
+    pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) rust_type: TokenStream,
+    pub(crate) mut_: GcCell<NodeEnumDummyMut_>,
+}
+
+impl NodeMethods for NodeEnumDummy_ {
+    fn gather_read_deps(&self) -> Vec<Node> {
+        return vec![];
+    }
+
+    fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
+        return quote!();
+    }
+
+    fn gather_write_deps(&self) -> Vec<Node> {
+        return self.mut_.borrow().rust.dep();
+    }
+
+    fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
+        return quote!();
+    }
+
+    fn set_rust(&self, rust: Node) {
+        let mut mut_ = self.mut_.borrow_mut();
+        if let Some(r) = &mut_.rust {
+            if r.id() != rust.id() {
+                panic!("Rust end of {} already connected to node {}", self.id, r.id());
+            }
+        }
+        mut_.rust = Some(rust);
+        self.scope.0.mut_.borrow_mut().has_external_deps = true;
+    }
+
+    fn scope(&self) -> Object {
+        return self.scope.clone();
+    }
+
+    fn id(&self) -> String {
+        return self.id.clone();
+    }
+
+    fn rust_type(&self) -> TokenStream {
+        return self.rust_type.clone();
+    }
+}
+
+#[derive(Clone, Trace, Finalize)]
+pub(crate) struct NodeEnumDummy(pub(crate) Gc<NodeEnumDummy_>);
+
+impl Into<Node> for NodeEnumDummy {
+    fn into(self) -> Node {
+        return Node(crate::node::Node_::EnumDummy(self));
+    }
+}
+
+derive_forward_node_methods!(NodeEnumDummy);
+
+#[derive(Trace, Finalize)]
 pub(crate) struct EnumVariant {
     pub(crate) var_name: String,
     #[unsafe_ignore_trace]
@@ -45,9 +111,18 @@ pub(crate) struct EnumVariant {
 }
 
 #[derive(Trace, Finalize)]
+pub(crate) struct EnumDefaultVariant {
+    pub(crate) var_name: String,
+    #[unsafe_ignore_trace]
+    pub(crate) tag: Node,
+    pub(crate) element: Object,
+}
+
+#[derive(Trace, Finalize)]
 pub(crate) struct NodeEnumMut_ {
     pub(crate) serial_tag: LateInit<RedirectRef<Node, Node>>,
     pub(crate) variants: Vec<EnumVariant>,
+    pub(crate) default_variant: Option<EnumDefaultVariant>,
     pub(crate) rust: Option<Node>,
     pub(crate) external_deps: BTreeMap<String, Node>,
     #[unsafe_ignore_trace]
@@ -85,7 +160,7 @@ impl NodeMethods for NodeEnum_ {
             let var_ident = &v.var_name.ident();
             let elem_ident = v.element.0.rust_root.0.id.ident();
             let elem_code;
-            if self.mut_.borrow().external_deps.is_empty() {
+            if !v.element.0.mut_.borrow().has_external_deps {
                 let elem_type_ident = v.element.0.rust_root.0.type_name.ident();
                 let method;
                 if gen_ctx.async_ {
@@ -108,15 +183,49 @@ impl NodeMethods for NodeEnum_ {
                 },
             });
         }
-        let err = gen_ctx.new_read_err(&self.id, quote!(format!("Unknown variant with tag {:?}", #source_tag_ident)));
+        let default_code;
+        if let Some(default_v) = &self.mut_.borrow().default_variant {
+            let tag_ident = default_v.tag.id().ident();
+            let var_ident = &default_v.var_name.ident();
+            let elem_ident = default_v.element.0.rust_root.0.id.ident();
+            let elem_code;
+            if !default_v.element.0.mut_.borrow().has_external_deps {
+                let elem_type_ident = default_v.element.0.rust_root.0.type_name.ident();
+                let method;
+                if gen_ctx.async_ {
+                    method = quote!(read_async);
+                } else {
+                    method = quote!(read);
+                }
+                let read = gen_ctx.wrap_read(&self.id, quote!(#elem_type_ident:: #method(#source_ident)));
+                elem_code = quote!{
+                    let #elem_ident = #read;
+                }
+            } else {
+                elem_code = generate_read(gen_ctx, &default_v.element.0);
+            }
+            default_code = quote!{
+                #tag_ident => {
+                    #elem_code 
+                    //. .
+                    #dest_ident = #type_ident:: #var_ident(#elem_ident);
+                }
+            };
+        } else {
+            let err =
+                gen_ctx.new_read_err(&self.id, quote!(format!("Unknown variant with tag {:?}", #source_tag_ident)));
+            default_code = quote!{
+                _ => {
+                    return Err(#err);
+                }
+            };
+        }
         return quote!{
             let #dest_ident;
             match #source_tag_ident {
                 #(#var_code) * 
                 //. .
-                _ => {
-                    return Err(#err);
-                }
+                #default_code
             };
         };
     }
@@ -151,7 +260,7 @@ impl NodeMethods for NodeEnum_ {
             let elem_source_ident = v.element.0.rust_root.0.id.ident();
             let elem_dest_ident = v.element.0.serial_root.0.id.ident();
             let elem_code;
-            if self.mut_.borrow().external_deps.is_empty() {
+            if !v.element.0.mut_.borrow().has_external_deps {
                 let method;
                 if gen_ctx.async_ {
                     method = quote!(write_async);
@@ -167,11 +276,41 @@ impl NodeMethods for NodeEnum_ {
             }
             var_code.push(quote!{
                 #enum_name:: #variant_name(#elem_source_ident) => {
-                    #dest_tag_ident = #tag;
                     let mut #elem_dest_ident = std:: vec:: Vec::< u8 >:: new();
                     #elem_code 
                     //. .
                     #dest_ident.extend(#elem_dest_ident);
+                    #dest_tag_ident = #tag;
+                },
+            });
+        }
+        if let Some(default_v) = &self.mut_.borrow().default_variant {
+            let tag_ident = &default_v.tag.id().ident();
+            let variant_name = &default_v.var_name.ident();
+            let elem_source_ident = default_v.element.0.rust_root.0.id.ident();
+            let elem_dest_ident = default_v.element.0.serial_root.0.id.ident();
+            let elem_code;
+            if !default_v.element.0.mut_.borrow().has_external_deps {
+                let method;
+                if gen_ctx.async_ {
+                    method = quote!(write_async);
+                } else {
+                    method = quote!(write);
+                }
+                let write = gen_ctx.wrap_write(quote!(#elem_source_ident.#method(& mut #elem_dest_ident)));
+                elem_code = quote!{
+                    #write;
+                };
+            } else {
+                elem_code = generate_write(gen_ctx, &default_v.element.0);
+            }
+            var_code.push(quote!{
+                #enum_name:: #variant_name(#elem_source_ident) => {
+                    let mut #elem_dest_ident = std:: vec:: Vec::< u8 >:: new();
+                    #elem_code 
+                    //. .
+                    #dest_ident.extend(#elem_dest_ident);
+                    #dest_tag_ident =* #tag_ident;
                 },
             });
         }

@@ -29,6 +29,7 @@ pub(crate) struct NodeRustFieldMut_ {
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeRustField_ {
+    pub(crate) scope: Object,
     pub(crate) id: String,
     pub(crate) field_name: String,
     pub(crate) obj: NodeRustObj,
@@ -62,7 +63,7 @@ impl NodeMethods for NodeRustField_ {
     }
 
     fn scope(&self) -> Object {
-        unreachable!();
+        return self.scope.clone();
     }
 
     fn id(&self) -> String {

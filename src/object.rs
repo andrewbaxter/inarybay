@@ -80,6 +80,10 @@ use crate::{
         NodeEnum,
         EnumVariant,
         NodeEnum_,
+        EnumDefaultVariant,
+        NodeEnumDummy,
+        NodeEnumDummy_,
+        NodeEnumDummyMut_,
     },
     node_fixed_bytes::{
         NodeFixedBytes,
@@ -155,7 +159,8 @@ pub(crate) enum SomeEscapableParent {
 #[derive(Trace, Finalize)]
 pub(crate) struct ObjectMut_ {
     pub(crate) escapable_parent: EscapableParent,
-    pub(crate) rust_const_roots: Vec<NodeConst>,
+    pub(crate) rust_extra_roots: Vec<NodeConst>,
+    pub(crate) serial_extra_roots: Vec<Node>,
     pub(crate) has_external_deps: bool,
     #[unsafe_ignore_trace]
     pub(crate) type_attrs: Vec<TokenStream>,
@@ -235,7 +240,8 @@ impl Object {
             rust_root: rust_root,
             mut_: GcCell::new(ObjectMut_ {
                 escapable_parent: EscapableParent::None,
-                rust_const_roots: vec![],
+                rust_extra_roots: vec![],
+                serial_extra_roots: vec![],
                 has_external_deps: false,
                 type_attrs: vec![],
                 seen_ids: HashSet::new(),
@@ -483,6 +489,7 @@ impl Object {
             mut_: GcCell::new(crate::node_enum::NodeEnumMut_ {
                 serial_tag: None,
                 variants: vec![],
+                default_variant: None,
                 rust: None,
                 external_deps: BTreeMap::new(),
                 type_attrs: vec![],
@@ -629,7 +636,7 @@ impl Object {
             expect: value,
             mut_: GcCell::new(NodeConstMut_ { serial: None }),
         }));
-        self.0.mut_.borrow_mut().rust_const_roots.push(rust.clone());
+        self.0.mut_.borrow_mut().rust_extra_roots.push(rust.clone());
         self.lift_connect(
             &self.get_ancestry_to(&serial),
             &serial,
@@ -642,6 +649,7 @@ impl Object {
         let name = name.into();
         let serial = serial.into();
         let rust = NodeRustField(Gc::new(NodeRustField_ {
+            scope: self.clone(),
             id: self.take_id(name.clone()),
             field_name: name,
             obj: self.0.rust_root.clone(),
@@ -870,6 +878,8 @@ impl Enum {
         self.enum_.0.mut_.borrow_mut().type_attrs.push(attrs);
     }
 
+    /// Define a new variant in the enum.  `tag` is a literal that will be used in the
+    /// match case for the tag value the enum reads.
     pub fn variant(
         &self,
         id: impl Into<String>,
@@ -891,5 +901,41 @@ impl Enum {
             parent: self.obj.clone(),
         });
         return element;
+    }
+
+    /// Define the default variant
+    pub fn default(
+        &self,
+        id: impl Into<String>,
+        variant_name: impl Into<String>,
+        obj_name: impl Into<String>,
+    ) -> (Object, Node) {
+        let id = id.into();
+        let variant_name = variant_name.into();
+        let element = Object::new(id.clone(), &self.schema, obj_name.into());
+        let dummy: Node = NodeEnumDummy(Gc::new(NodeEnumDummy_ {
+            scope: element.clone(),
+            id: format!("{}__tag", id),
+            rust_type: self.enum_.0.mut_.borrow().serial_tag.as_ref().unwrap().primary.rust_type(),
+            mut_: GcCell::new(NodeEnumDummyMut_ { rust: None }),
+        })).into();
+        let old = self.enum_.0.mut_.borrow_mut().default_variant.replace(EnumDefaultVariant {
+            var_name: variant_name.clone(),
+            tag: dummy.clone(),
+            element: element.clone(),
+        });
+        if old.is_some() {
+            panic!("Default variant already set.");
+        }
+        {
+            let mut el_mut = element.0.mut_.borrow_mut();
+            el_mut.serial_extra_roots.push(dummy.clone());
+            el_mut.escapable_parent = EscapableParent::Enum(EscapableParentEnum {
+                enum_: self.enum_.clone(),
+                variant_name: variant_name,
+                parent: self.obj.clone(),
+            });
+        }
+        return (element, dummy);
     }
 }

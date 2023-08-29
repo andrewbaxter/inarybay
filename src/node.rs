@@ -20,7 +20,10 @@ use crate::{
         NodeRustField,
         NodeRustObj,
     },
-    node_enum::NodeEnum,
+    node_enum::{
+        NodeEnum,
+        NodeEnumDummy,
+    },
     object::{
         Object,
     },
@@ -98,6 +101,7 @@ pub(crate) enum Node_ {
     RemainingBytes(NodeRemainingBytes),
     DynamicArray(NodeDynamicArray),
     Enum(NodeEnum),
+    EnumDummy(NodeEnumDummy),
     Const(NodeConst),
     Custom(NodeCustom),
     RustField(NodeRustField),
@@ -119,6 +123,7 @@ impl NodeMethods for Node_ {
             Node_::RemainingBytes(inner) => NodeMethods::gather_read_deps(inner),
             Node_::DynamicArray(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Enum(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::EnumDummy(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Const(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Custom(inner) => NodeMethods::gather_read_deps(inner),
             Node_::RustField(inner) => NodeMethods::gather_read_deps(inner),
@@ -162,6 +167,9 @@ impl NodeMethods for Node_ {
             Node_::Enum(inner) => {
                 NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
             },
+            Node_::EnumDummy(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
             Node_::Const(inner) => {
                 NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
             },
@@ -191,6 +199,7 @@ impl NodeMethods for Node_ {
             Node_::RemainingBytes(inner) => NodeMethods::gather_write_deps(inner),
             Node_::DynamicArray(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Enum(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::EnumDummy(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Const(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Custom(inner) => NodeMethods::gather_write_deps(inner),
             Node_::RustField(inner) => NodeMethods::gather_write_deps(inner),
@@ -232,6 +241,9 @@ impl NodeMethods for Node_ {
                 NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
             },
             Node_::Enum(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::EnumDummy(inner) => {
                 NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
             },
             Node_::Const(inner) => {
@@ -281,6 +293,7 @@ impl NodeMethods for Node_ {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
             Node_::Enum(inner) => NodeMethods::set_rust(inner, __enum_dispatch_arg_0),
+            Node_::EnumDummy(inner) => NodeMethods::set_rust(inner, __enum_dispatch_arg_0),
             Node_::Const(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
@@ -310,6 +323,7 @@ impl NodeMethods for Node_ {
             Node_::RemainingBytes(inner) => NodeMethods::scope(inner),
             Node_::DynamicArray(inner) => NodeMethods::scope(inner),
             Node_::Enum(inner) => NodeMethods::scope(inner),
+            Node_::EnumDummy(inner) => NodeMethods::scope(inner),
             Node_::Const(inner) => NodeMethods::scope(inner),
             Node_::Custom(inner) => NodeMethods::scope(inner),
             Node_::RustField(inner) => NodeMethods::scope(inner),
@@ -331,6 +345,7 @@ impl NodeMethods for Node_ {
             Node_::RemainingBytes(inner) => NodeMethods::id(inner),
             Node_::DynamicArray(inner) => NodeMethods::id(inner),
             Node_::Enum(inner) => NodeMethods::id(inner),
+            Node_::EnumDummy(inner) => NodeMethods::id(inner),
             Node_::Const(inner) => NodeMethods::id(inner),
             Node_::Custom(inner) => NodeMethods::id(inner),
             Node_::RustField(inner) => NodeMethods::id(inner),
@@ -352,6 +367,7 @@ impl NodeMethods for Node_ {
             Node_::RemainingBytes(inner) => NodeMethods::rust_type(inner),
             Node_::DynamicArray(inner) => NodeMethods::rust_type(inner),
             Node_::Enum(inner) => NodeMethods::rust_type(inner),
+            Node_::EnumDummy(inner) => NodeMethods::rust_type(inner),
             Node_::Const(inner) => NodeMethods::rust_type(inner),
             Node_::Custom(inner) => NodeMethods::rust_type(inner),
             Node_::RustField(inner) => NodeMethods::rust_type(inner),

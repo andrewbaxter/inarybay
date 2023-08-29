@@ -16,6 +16,7 @@ mod gen_dynamic_bytes;
 mod gen_remaining_bytes;
 mod gen_dynamic_array;
 mod gen_enum;
+mod gen_enum_default;
 mod gen_enum_external_deps;
 mod gen_string;
 
@@ -186,6 +187,13 @@ round_trip!(
     test_enum_async;
     gen_enum::T1,
     gen_enum::T1 { august: gen_enum::August::December(gen_enum::December { f: 107 }) }
+);
+
+round_trip!(
+    test_enum_default,
+    test_enum_default_async;
+    gen_enum_default::T1,
+    gen_enum_default::T1 { august: gen_enum_default::August::December(gen_enum_default::December { what: 3 }) }
 );
 
 round_trip!(

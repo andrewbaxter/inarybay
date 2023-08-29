@@ -236,6 +236,33 @@ pub fn generate(root: PathBuf) {
         write("enum", s);
     }
 
+    // Enum default variant
+    {
+        let s = inarybay::schema::Schema::new();
+        let top = s.object("root", "T1");
+        top.add_type_attrs(quote!(#[derive(Debug, PartialEq)]));
+        let tag = top.int("august_tag", top.fixed_range("range0", 1), Endian::Little, false);
+        {
+            let (enum_, enum_builder) = top.enum_("august_val", tag, "August");
+            enum_builder.add_type_attrs(quote!(#[derive(Debug, PartialEq)]));
+            {
+                let november = enum_builder.variant("var_nov", "November", "November", quote!(0u8));
+                november.add_type_attrs(quote!(#[derive(Debug, PartialEq)]));
+                november.rust_field(
+                    "f",
+                    november.int("f_val", november.fixed_range("range1", 1), Endian::Little, true),
+                );
+            }
+            {
+                let (december, tag) = enum_builder.default("var_dec", "December", "December");
+                december.add_type_attrs(quote!(#[derive(Debug, PartialEq)]));
+                december.rust_field("what", tag);
+            }
+            top.rust_field("august", enum_);
+        }
+        write("enum_default", s);
+    }
+
     // Enum with external deps
     {
         let s = inarybay::schema::Schema::new();

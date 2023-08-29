@@ -1,6 +1,6 @@
 This is a graph-based binary format serializer/deserializer generator for use in `build.rs`, for interfacing with existing, externally developed binary format specifications. If you want to automatically serialize/deserialize your own data, use Protobuf or Bincode or something similar instead of this.
 
-Many existing de/serializer code generators use derive macros, but this puts restrictions on what sort of data can be described (it needs to roughly match a rust struct) and the limited workarounds available make those tools harder to learn and work with.
+By avoiding a struct macro based interface I think this is more flexible and simpler to use than alternatives.
 
 # Goals
 
@@ -12,9 +12,11 @@ Goals
 
 2. Easy to understand, composable elements
 
-   The API is simple and flexible by chaining reversible processing steps with easily understood nodes.
+   The API is simple and flexible by chaining reversible processing steps with well encapsulated nodes.
 
-3. Unambiguity - specifications are unambiguous, so binary representations with the same spec never change in future versions due to underspecification
+3. Precision
+
+   Specifications are unambiguous, so binary representations with the same spec never change in future versions due to underspecification.
 
 4. Safety
    - Type, overlap, bounds checking
@@ -42,6 +44,7 @@ Current features
 - Out of order/split deserialization
 - Custom types (serde, exotic string encodings)
 - Sync and async
+- ✨Macro and generic free✨
 
 Want features
 
@@ -59,9 +62,13 @@ Not-in-the-short-run features
 
 ## Terminology: The serial-rust axis
 
-Things like links between nodes have two sides, and for various operations it's important to be able to refer to these separately. Since this is bi-directional, words like "source" "destination" "root" "leaf" etc. are ambiguous.
+The words "serial" and "rust" are scattered here and there.
 
-I use the worlds "serial" and "rust". Deserialization takes data from the "serial" side and moves towards the "rust" side, ending at the "rust root" which is the object to deserialize. Serialization takes "rust" side data (the object) and transforms it through multiple nodes until it reaches the "serial root" - the file, or socket, or whatever. Each link between nodes has a "serial" and a "rust" side.
+Deserialization takes data from the "serial" side and moves towards the "rust" side, ending at the "rust root" which is the object to deserialize.
+
+Serialization takes "rust" side data (the object) and transforms it through multiple nodes until it reaches the "serial root" - the file, or socket, or whatever.
+
+Each link between nodes has a "serial" and a "rust" side.
 
 ## Setup
 
@@ -120,7 +127,7 @@ Some of the descriptions here are deserialization-oriented, but everything is na
 ## A note on arguments
 
 - **`id`** - these are used for variable names in the generated de/serialize code, as well as uniquely identifying nodes for error messages and loop-identification during graph traversal
-- **`TokenStream`** - if an argument has this type, it means it wants some code that will be injected into the generated code. You can generate it with `quote!()` or `quote!{}` (equivalent, use whichever bracket you prefer) from the [quote](x) crate. The code could be something as simple as a type (like `quote!(my::special::Type)`), an expression (`quote!(#source * 33)`), or multiple statements, depending on what the function requires.
+- **`TokenStream`** - if an argument has this type, it means it wants some code that will be injected into the generated code. You can generate it with `quote!()` or `quote!{}` (equivalent, use whichever bracket you prefer) from the [quote](https://github.com/dtolnay/quote) crate. The code could be something as simple as a type (like `quote!(my::special::Type)`), an expression (`quote!(#source * 33)`), or multiple statements, depending on what the function requires.
 
 # Design and implementation
 

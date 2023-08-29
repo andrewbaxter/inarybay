@@ -156,7 +156,7 @@ impl Schema {
                         let other_type = &other_v.0.rust_root.0.type_name;
                         if first_type != other_type {
                             panic!(
-                                "Definitions of enum {} variant {} have mismatched types {} and {}",
+                                "Definitions of enum {} variant {} have mismatched types: {} and {}",
                                 name,
                                 first_v.var_name,
                                 first_type,
@@ -170,6 +170,25 @@ impl Schema {
                 for v in other_variants.keys() {
                     panic!("Some definitions of {} are missing variant {}", name, v);
                 }
+                match (&first.0.mut_.borrow().default_variant, &other.0.mut_.borrow().default_variant) {
+                    (None, None) => { },
+                    (Some(first_v), Some(other_v)) => {
+                        let first_type = &first_v.element.0.rust_root.0.type_name;
+                        let other_type = &other_v.element.0.rust_root.0.type_name;
+                        if first_type != other_type {
+                            panic!(
+                                "Definitions of enum {} default variant {} have mismatched types: {} and {}",
+                                name,
+                                first_v.var_name,
+                                first_type,
+                                other_type
+                            );
+                        }
+                    },
+                    _ => {
+                        panic!("Some definitions of {} are missing a default variant", name);
+                    },
+                }
             }
 
             // Generate code
@@ -178,6 +197,13 @@ impl Schema {
             for v in &first.0.mut_.borrow().variants {
                 let var_ident = &v.var_name.ident();
                 let var_type_ident = &v.element.0.rust_root.0.type_name.ident();
+                variants.push(quote!{
+                    #var_ident(#var_type_ident),
+                });
+            }
+            if let Some(default_v) = &first.0.mut_.borrow().default_variant {
+                let var_ident = &default_v.var_name.ident();
+                let var_type_ident = &default_v.element.0.rust_root.0.type_name.ident();
                 variants.push(quote!{
                     #var_ident(#var_type_ident),
                 });
@@ -215,7 +241,7 @@ impl Schema {
                                 let r_type = &r.0.type_name;
                                 if l_type != r_type {
                                     panic!(
-                                        "Definitions of {} field {} have mismatched enum inner types {} and {}",
+                                        "Definitions of {} field {} have mismatched enum inner types: {} and {}",
                                         name,
                                         first_f.0.field_name,
                                         l_type,
@@ -232,7 +258,7 @@ impl Schema {
                                         let r_type = &v.element.0.rust_root.0.type_name;
                                         if l_type != r_type {
                                             panic!(
-                                                "Definitions of {} enum field {} variant {} have mismatched inner types {} and {}",
+                                                "Definitions of {} enum field {} variant {} have mismatched inner types: {} and {}",
                                                 name,
                                                 first_f.0.field_name,
                                                 v.var_name,
@@ -432,7 +458,7 @@ pub(crate) fn generate_read(gen_ctx: &GenerateContext, obj: &Object_) -> TokenSt
     let mut seen = HashSet::new();
     let mut stack: Vec<(Node, bool)> = vec![];
     stack.push((obj.rust_root.clone().into(), true));
-    for c in &obj.mut_.borrow().rust_const_roots {
+    for c in &obj.mut_.borrow().rust_extra_roots {
         stack.push((c.clone().into(), true));
     }
     for c in &obj.serial_root.0.mut_.borrow().sub_segments {
@@ -464,6 +490,9 @@ pub(crate) fn generate_write(gen_ctx: &GenerateContext, obj: &Object_) -> TokenS
     // segment/serial root)
     let mut seen = HashSet::new();
     let mut stack: Vec<(Node, bool)> = vec![];
+    for c in &obj.mut_.borrow().serial_extra_roots {
+        stack.push((c.clone().into(), true));
+    }
     stack.push((obj.serial_root.clone().into(), true));
     let mut code = vec![];
     while let Some((node, first_visit)) = stack.pop() {
