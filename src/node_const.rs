@@ -78,6 +78,10 @@ impl NodeMethods for NodeConst_ {
     fn id(&self) -> String {
         return self.id.clone();
     }
+
+    fn rust_type(&self) -> TokenStream {
+        unreachable!();
+    }
 }
 
 #[derive(Clone, Trace, Finalize)]

@@ -8,7 +8,10 @@ use gc::{
 use proc_macro2::{
     TokenStream,
 };
-use quote::quote;
+use quote::{
+    quote,
+    ToTokens,
+};
 use crate::{
     object::{
         Object,
@@ -200,6 +203,10 @@ impl NodeMethods for NodeEnum_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn rust_type(&self) -> TokenStream {
+        return self.type_name.ident().into_token_stream();
     }
 }
 

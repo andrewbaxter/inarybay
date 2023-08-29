@@ -3,7 +3,9 @@ use gc::{
     Trace,
     Finalize,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    TokenStream,
+};
 use crate::{
     node_serial::{
         NodeSerial,
@@ -24,6 +26,10 @@ use crate::{
     },
     node_fixed_bytes::NodeFixedBytes,
     schema::GenerateContext,
+    node_delimited_bytes::NodeDelimitedBytes,
+    node_remaining_bytes::NodeRemainingBytes,
+    node_custom::NodeCustom,
+    node_align::NodeAlign,
 };
 
 #[enum_dispatch]
@@ -35,6 +41,7 @@ pub(crate) trait NodeMethods {
     fn set_rust(&self, rust: Node);
     fn scope(&self) -> Object;
     fn id(&self) -> String;
+    fn rust_type(&self) -> TokenStream;
 }
 
 #[macro_export]
@@ -68,6 +75,10 @@ macro_rules! derive_forward_node_methods{
             fn id(&self) -> String {
                 return self.0.id();
             }
+
+            fn rust_type(&self) -> proc_macro2::TokenStream {
+                return self.0.rust_type();
+            }
         }
     };
 }
@@ -78,13 +89,17 @@ macro_rules! derive_forward_node_methods{
 pub(crate) enum Node_ {
     Serial(NodeSerial),
     SerialSegment(NodeSerialSegment),
+    Align(NodeAlign),
     FixedRange(NodeFixedRange),
     FixedBytes(NodeFixedBytes),
     Int(NodeInt),
     DynamicBytes(NodeDynamicBytes),
+    DelimitedBytes(NodeDelimitedBytes),
+    RemainingBytes(NodeRemainingBytes),
     DynamicArray(NodeDynamicArray),
     Enum(NodeEnum),
     Const(NodeConst),
+    Custom(NodeCustom),
     RustField(NodeRustField),
     RustObj(NodeRustObj),
 }
@@ -95,32 +110,70 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::gather_read_deps(inner),
             Node_::SerialSegment(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::Align(inner) => NodeMethods::gather_read_deps(inner),
             Node_::FixedRange(inner) => NodeMethods::gather_read_deps(inner),
             Node_::FixedBytes(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Int(inner) => NodeMethods::gather_read_deps(inner),
             Node_::DynamicBytes(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::DelimitedBytes(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::RemainingBytes(inner) => NodeMethods::gather_read_deps(inner),
             Node_::DynamicArray(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Enum(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Const(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::Custom(inner) => NodeMethods::gather_read_deps(inner),
             Node_::RustField(inner) => NodeMethods::gather_read_deps(inner),
             Node_::RustObj(inner) => NodeMethods::gather_read_deps(inner),
         }
     }
 
     #[inline]
-    fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
+    fn generate_read(&self, __enum_dispatch_arg_0: &GenerateContext) -> TokenStream {
         match self {
-            Node_::Serial(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::SerialSegment(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::FixedRange(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::FixedBytes(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::Int(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::DynamicBytes(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::DynamicArray(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::Enum(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::Const(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::RustField(inner) => NodeMethods::generate_read(inner, gen_ctx),
-            Node_::RustObj(inner) => NodeMethods::generate_read(inner, gen_ctx),
+            Node_::Serial(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::SerialSegment(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Align(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::FixedRange(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::FixedBytes(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Int(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::DynamicBytes(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::DelimitedBytes(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::RemainingBytes(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::DynamicArray(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Enum(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Const(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Custom(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::RustField(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
+            Node_::RustObj(inner) => {
+                NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
+            },
         }
     }
 
@@ -129,32 +182,70 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::gather_write_deps(inner),
             Node_::SerialSegment(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::Align(inner) => NodeMethods::gather_write_deps(inner),
             Node_::FixedRange(inner) => NodeMethods::gather_write_deps(inner),
             Node_::FixedBytes(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Int(inner) => NodeMethods::gather_write_deps(inner),
             Node_::DynamicBytes(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::DelimitedBytes(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::RemainingBytes(inner) => NodeMethods::gather_write_deps(inner),
             Node_::DynamicArray(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Enum(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Const(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::Custom(inner) => NodeMethods::gather_write_deps(inner),
             Node_::RustField(inner) => NodeMethods::gather_write_deps(inner),
             Node_::RustObj(inner) => NodeMethods::gather_write_deps(inner),
         }
     }
 
     #[inline]
-    fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
+    fn generate_write(&self, __enum_dispatch_arg_0: &GenerateContext) -> TokenStream {
         match self {
-            Node_::Serial(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::SerialSegment(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::FixedRange(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::FixedBytes(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::Int(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::DynamicBytes(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::DynamicArray(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::Enum(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::Const(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::RustField(inner) => NodeMethods::generate_write(inner, gen_ctx),
-            Node_::RustObj(inner) => NodeMethods::generate_write(inner, gen_ctx),
+            Node_::Serial(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::SerialSegment(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Align(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::FixedRange(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::FixedBytes(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Int(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::DynamicBytes(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::DelimitedBytes(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::RemainingBytes(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::DynamicArray(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Enum(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Const(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Custom(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::RustField(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
+            Node_::RustObj(inner) => {
+                NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
+            },
         }
     }
 
@@ -167,6 +258,9 @@ impl NodeMethods for Node_ {
             Node_::SerialSegment(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
+            Node_::Align(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
             Node_::FixedRange(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
@@ -177,11 +271,20 @@ impl NodeMethods for Node_ {
             Node_::DynamicBytes(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
+            Node_::DelimitedBytes(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::RemainingBytes(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
             Node_::DynamicArray(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
             Node_::Enum(inner) => NodeMethods::set_rust(inner, __enum_dispatch_arg_0),
             Node_::Const(inner) => {
+                NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
+            },
+            Node_::Custom(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
             Node_::RustField(inner) => {
@@ -198,13 +301,17 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::scope(inner),
             Node_::SerialSegment(inner) => NodeMethods::scope(inner),
+            Node_::Align(inner) => NodeMethods::scope(inner),
             Node_::FixedRange(inner) => NodeMethods::scope(inner),
             Node_::FixedBytes(inner) => NodeMethods::scope(inner),
             Node_::Int(inner) => NodeMethods::scope(inner),
             Node_::DynamicBytes(inner) => NodeMethods::scope(inner),
+            Node_::DelimitedBytes(inner) => NodeMethods::scope(inner),
+            Node_::RemainingBytes(inner) => NodeMethods::scope(inner),
             Node_::DynamicArray(inner) => NodeMethods::scope(inner),
             Node_::Enum(inner) => NodeMethods::scope(inner),
             Node_::Const(inner) => NodeMethods::scope(inner),
+            Node_::Custom(inner) => NodeMethods::scope(inner),
             Node_::RustField(inner) => NodeMethods::scope(inner),
             Node_::RustObj(inner) => NodeMethods::scope(inner),
         }
@@ -215,33 +322,40 @@ impl NodeMethods for Node_ {
         match self {
             Node_::Serial(inner) => NodeMethods::id(inner),
             Node_::SerialSegment(inner) => NodeMethods::id(inner),
+            Node_::Align(inner) => NodeMethods::id(inner),
             Node_::FixedRange(inner) => NodeMethods::id(inner),
             Node_::FixedBytes(inner) => NodeMethods::id(inner),
             Node_::Int(inner) => NodeMethods::id(inner),
             Node_::DynamicBytes(inner) => NodeMethods::id(inner),
+            Node_::DelimitedBytes(inner) => NodeMethods::id(inner),
+            Node_::RemainingBytes(inner) => NodeMethods::id(inner),
             Node_::DynamicArray(inner) => NodeMethods::id(inner),
             Node_::Enum(inner) => NodeMethods::id(inner),
             Node_::Const(inner) => NodeMethods::id(inner),
+            Node_::Custom(inner) => NodeMethods::id(inner),
             Node_::RustField(inner) => NodeMethods::id(inner),
             Node_::RustObj(inner) => NodeMethods::id(inner),
         }
     }
-}
 
-impl Node_ {
-    pub(crate) fn typestr(&self) -> &'static str {
+    #[inline]
+    fn rust_type(&self) -> TokenStream {
         match self {
-            Node_::Serial(_) => unreachable!(),
-            Node_::SerialSegment(_) => unreachable!(),
-            Node_::FixedRange(_) => unreachable!(),
-            Node_::FixedBytes(_) => "fixed bytes",
-            Node_::Int(_) => "int",
-            Node_::DynamicBytes(_) => "dynamic bytes",
-            Node_::DynamicArray(_) => "array",
-            Node_::Enum(_) => "enum",
-            Node_::Const(_) => "const",
-            Node_::RustField(_) => unreachable!(),
-            Node_::RustObj(_) => unreachable!(),
+            Node_::Serial(inner) => NodeMethods::rust_type(inner),
+            Node_::SerialSegment(inner) => NodeMethods::rust_type(inner),
+            Node_::Align(inner) => NodeMethods::rust_type(inner),
+            Node_::FixedRange(inner) => NodeMethods::rust_type(inner),
+            Node_::FixedBytes(inner) => NodeMethods::rust_type(inner),
+            Node_::Int(inner) => NodeMethods::rust_type(inner),
+            Node_::DynamicBytes(inner) => NodeMethods::rust_type(inner),
+            Node_::DelimitedBytes(inner) => NodeMethods::rust_type(inner),
+            Node_::RemainingBytes(inner) => NodeMethods::rust_type(inner),
+            Node_::DynamicArray(inner) => NodeMethods::rust_type(inner),
+            Node_::Enum(inner) => NodeMethods::rust_type(inner),
+            Node_::Const(inner) => NodeMethods::rust_type(inner),
+            Node_::Custom(inner) => NodeMethods::rust_type(inner),
+            Node_::RustField(inner) => NodeMethods::rust_type(inner),
+            Node_::RustObj(inner) => NodeMethods::rust_type(inner),
         }
     }
 }
@@ -276,6 +390,10 @@ impl NodeMethods for Node {
 
     fn id(&self) -> String {
         return self.0.id();
+    }
+
+    fn rust_type(&self) -> TokenStream {
+        return self.0.rust_type();
     }
 }
 

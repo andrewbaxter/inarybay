@@ -16,7 +16,6 @@ use proc_macro2::{
 };
 use quote::{
     quote,
-    ToTokens,
 };
 use crate::{
     object::{
@@ -31,12 +30,22 @@ use crate::{
     },
     util::{
         ToIdent,
+        offset_ident,
     },
     node_enum::NodeEnum,
 };
 
 #[derive(Trace, Finalize)]
+pub(crate) enum ReaderBounds {
+    None,
+    Buffered,
+}
+
+#[derive(Trace, Finalize)]
 pub struct Schema_ {
+    #[unsafe_ignore_trace]
+    pub(crate) imports: BTreeMap<String, TokenStream>,
+    pub(crate) reader_bounds: ReaderBounds,
     pub(crate) objects: BTreeMap<String, Vec<Object>>,
     pub(crate) enums: BTreeMap<String, Vec<NodeEnum>>,
 }
@@ -73,19 +82,17 @@ impl GenerateContext {
         }
     }
 
+    pub(crate) fn wrap_read_err(&self, node: &str, mut read: TokenStream) -> TokenStream {
+        let text = format!("Error parsing, in node {}", node);
+        read = quote!(#read.errorize(#text) ?);
+        return read;
+    }
+
     pub(crate) fn wrap_read(&self, node: &str, mut read: TokenStream) -> TokenStream {
         if self.async_ {
             read = quote!(#read.await);
         }
-        match self.low_heap {
-            true => {
-                let text = format!("Error parsing in node {}", node);
-                read = quote!(#read.errorize(#text) ?);
-            },
-            false => {
-                read = quote!(#read.errorize(#node) ?);
-            },
-        }
+        read = self.wrap_read_err(node, read);
         return read;
     }
 
@@ -116,6 +123,8 @@ impl GenerateContext {
 impl Schema {
     pub fn new() -> Schema {
         return Schema(Gc::new(GcCell::new(Schema_ {
+            imports: BTreeMap::new(),
+            reader_bounds: ReaderBounds::None,
             objects: BTreeMap::new(),
             enums: BTreeMap::new(),
         })));
@@ -201,31 +210,6 @@ impl Schema {
                         let first_f_mut = first_f.0.mut_.borrow();
                         let first_f_serial = first_f_mut.serial.as_ref().unwrap();
                         match NodeSameVariant::pairs(&other_f_value.0, &first_f_serial.primary.0) {
-                            NodeSameVariant::Int(l, r) => {
-                                if l.0.rust_type.to_string() != r.0.rust_type.to_string() {
-                                    panic!(
-                                        "Definitions of {} field {} have mismatched rust types {} and {}",
-                                        name,
-                                        first_f.0.field_name,
-                                        l.0.rust_type,
-                                        r.0.rust_type
-                                    );
-                                }
-                            },
-                            NodeSameVariant::DynamicBytes(_, _) => { },
-                            NodeSameVariant::DynamicArray(l, r) => {
-                                let l_type = &l.0.element.0.rust_root.0.type_name;
-                                let r_type = &r.0.element.0.rust_root.0.type_name;
-                                if l_type != r_type {
-                                    panic!(
-                                        "Definitions of {} field {} have mismatched array element types {} and {}",
-                                        name,
-                                        first_f.0.field_name,
-                                        l_type,
-                                        r_type
-                                    );
-                                }
-                            },
                             NodeSameVariant::Enum(l, r) => {
                                 let l_type = &l.0.type_name;
                                 let r_type = &r.0.type_name;
@@ -267,12 +251,16 @@ impl Schema {
                                 }
                             },
                             NodeSameVariant::Nonmatching(l, r) => {
-                                panic!(
-                                    "Some definitions of {} have value type {}, others {}",
-                                    name,
-                                    l.typestr(),
-                                    r.typestr()
-                                );
+                                let l_type = l.rust_type().to_string();
+                                let r_type = r.rust_type().to_string();
+                                if l_type != r_type {
+                                    panic!(
+                                        "Some definitions of {} have value type {}, others {}",
+                                        name,
+                                        l_type,
+                                        r_type
+                                    );
+                                }
                             },
                             _ => unreachable!(),
                         }
@@ -290,17 +278,7 @@ impl Schema {
             let mut fields = vec![];
             for f in &first.0.rust_root.0.mut_.borrow().fields {
                 let field_ident = &f.0.field_name.ident();
-                let field_type = match &f.0.mut_.borrow().serial.as_ref().unwrap().primary.0 {
-                    Node_::FixedBytes(n) => n.0.rust_type.clone(),
-                    Node_::Int(n) => n.0.rust_type.to_token_stream(),
-                    Node_::DynamicBytes(_) => quote!(std:: vec:: Vec < u8 >),
-                    Node_::DynamicArray(n) => {
-                        let inner = &n.0.element.0.rust_root.0.type_name.ident();
-                        quote!(std:: vec:: Vec < #inner >)
-                    },
-                    Node_::Enum(n) => n.0.type_name.ident().into_token_stream(),
-                    _ => unreachable!(),
-                };
+                let field_type = f.0.mut_.borrow().serial.as_ref().unwrap().primary.rust_type();
                 fields.push(quote!{
                     pub #field_ident: #field_type,
                 });
@@ -318,6 +296,7 @@ impl Schema {
             // serialization. (TODO Should maybe check for exactly one serialization format?).
             let root = first;
             if !root.0.mut_.borrow().has_external_deps {
+                let offset_ident = offset_ident();
                 let root_obj = &root.0.rust_root.0;
                 let obj_ident = root_obj.id.ident();
                 let serial_ident = root.0.serial_root.0.id.ident();
@@ -328,11 +307,16 @@ impl Schema {
                             low_heap: config.low_heap,
                             async_: false,
                         };
+                        let reader = match self.0.borrow().reader_bounds {
+                            ReaderBounds::None => quote!(std::io::Read),
+                            ReaderBounds::Buffered => quote!(std::io::BufRead),
+                        };
                         let code = generate_read(&gen_ctx, &root.0);
                         let err_ident = gen_ctx.read_err_type();
                         methods.push(quote!{
-                            pub fn read(#serial_ident:& mut dyn std:: io:: Read) -> Result < Self,
+                            pub fn read < R: #reader >(#serial_ident:& mut R) -> Result < Self,
                             #err_ident > {
+                                let mut #offset_ident = 0usize;
                                 #code 
                                 //. .
                                 return Ok(#obj_ident);
@@ -344,13 +328,18 @@ impl Schema {
                             low_heap: config.low_heap,
                             async_: true,
                         };
+                        let reader = match self.0.borrow().reader_bounds {
+                            ReaderBounds::None => quote!(inarybay_runtime::async_::AsyncReadExt),
+                            ReaderBounds::Buffered => quote!(inarybay_runtime::async_::AsyncBufReadExt),
+                        };
                         let code = generate_read(&gen_ctx, &root.0);
                         let err_ident = gen_ctx.read_err_type();
                         methods.push(quote!{
-                            pub async fn read_async < R: inarybay_runtime:: async_:: AsyncReadExt + std:: marker:: Unpin >(
+                            pub async fn read_async < R: #reader + std:: marker:: Unpin >(
                                 #serial_ident:& mut R
                             ) -> Result < Self,
                             #err_ident > {
+                                let mut #offset_ident = 0usize;
                                 #code 
                                 //. .
                                 return Ok(#obj_ident);
@@ -366,7 +355,11 @@ impl Schema {
                         };
                         let code = generate_write(&gen_ctx, &root.0);
                         methods.push(quote!{
-                            pub fn write(&self, #serial_ident:& mut dyn std:: io:: Write) -> std:: io:: Result <() > {
+                            pub fn write < W: std:: io:: Write >(
+                                &self,
+                                #serial_ident:& mut W
+                            ) -> std:: io:: Result <() > {
+                                let mut #offset_ident = 0usize;
                                 let #obj_ident = self;
                                 //. .
                                 #code 
@@ -386,6 +379,7 @@ impl Schema {
                                 &self,
                                 #serial_ident:& mut W
                             ) -> std:: io:: Result <() > {
+                                let mut #offset_ident = 0usize;
                                 let #obj_ident = self;
                                 //. .
                                 #code 
@@ -416,6 +410,7 @@ impl Schema {
                 };
             },
         }
+        let imports: Vec<TokenStream> = self.0.borrow().imports.values().cloned().collect();
         return quote!{
             #![
                 allow(
@@ -428,10 +423,17 @@ impl Schema {
                 )
             ] 
             //. .
+            #(#imports) * 
+            //. .
             #use_err 
             //. .
             #(#code) *
         };
+    }
+
+    /// Add an import line to the generated code. Deduplicated by naive stringification.
+    pub fn add_import(&self, import: TokenStream) {
+        self.0.borrow_mut().imports.insert(import.to_string(), import);
     }
 }
 
@@ -440,6 +442,10 @@ pub(crate) fn generate_read(gen_ctx: &GenerateContext, obj: &Object_) -> TokenSt
     let mut stack: Vec<(Node, bool)> = vec![];
     stack.push((obj.rust_root.clone().into(), true));
     for c in &obj.mut_.borrow().rust_const_roots {
+        stack.push((c.clone().into(), true));
+    }
+    for c in &obj.serial_root.0.mut_.borrow().sub_segments {
+        // Make sure to read everything, even if padding, to leave stream in expected state
         stack.push((c.clone().into(), true));
     }
     let mut code = vec![];

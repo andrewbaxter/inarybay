@@ -100,6 +100,10 @@ impl NodeMethods for NodeFixedBytes_ {
     fn id(&self) -> String {
         return self.id.clone();
     }
+
+    fn rust_type(&self) -> TokenStream {
+        return self.rust_type.clone();
+    }
 }
 
 impl NodeFixedBytes {

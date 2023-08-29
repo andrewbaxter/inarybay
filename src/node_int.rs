@@ -21,20 +21,18 @@ use crate::{
         NodeMethods,
         ToDep,
     },
-    object::Object,
+    object::{
+        Object,
+        Endian,
+    },
     derive_forward_node_methods,
     schema::GenerateContext,
 };
 use quote::{
     quote,
     format_ident,
+    ToTokens,
 };
-
-#[derive(PartialEq, Trace, Finalize)]
-pub enum Endian {
-    Big,
-    Little,
-}
 
 pub(crate) struct NodeIntArgs {
     pub(crate) scope: Object,
@@ -234,6 +232,10 @@ impl NodeMethods for NodeInt_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn rust_type(&self) -> TokenStream {
+        return self.rust_type.clone().into_token_stream();
     }
 }
 

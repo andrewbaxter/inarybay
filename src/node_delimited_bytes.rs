@@ -7,12 +7,10 @@ use gc::{
 use proc_macro2::TokenStream;
 use quote::{
     quote,
-    ToTokens,
 };
 use crate::{
     node::{
         Node,
-        RedirectRef,
         NodeMethods,
         ToDep,
     },
@@ -21,48 +19,46 @@ use crate::{
     },
     util::{
         ToIdent,
-        LateInit,
-        generate_basic_read,
+        generate_delimited_read,
         rust_type_bytes,
     },
-    node_int::NodeInt,
     object::Object,
     derive_forward_node_methods,
     schema::GenerateContext,
 };
 
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeDynamicBytesMut_ {
-    pub(crate) serial_len: LateInit<RedirectRef<NodeInt, Node>>,
+pub(crate) struct NodeDelimitedBytesMut_ {
     pub(crate) rust: Option<Node>,
 }
 
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeDynamicBytes_ {
+pub(crate) struct NodeDelimitedBytes_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
-    pub(crate) mut_: GcCell<NodeDynamicBytesMut_>,
+    pub(crate) delim_len: usize,
+    #[unsafe_ignore_trace]
+    pub(crate) delim_bytes: TokenStream,
+    pub(crate) mut_: GcCell<NodeDelimitedBytesMut_>,
 }
 
-impl NodeMethods for NodeDynamicBytes_ {
+impl NodeMethods for NodeDelimitedBytes_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         let mut out = vec![];
         out.extend(self.serial_before.dep());
-        out.extend(self.mut_.borrow().serial_len.dep());
         out.extend(self.serial.dep());
         return out;
     }
 
     fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id.ident().to_token_stream();
-        return generate_basic_read(
+        return generate_delimited_read(
             gen_ctx,
             &self.id,
             self.id.ident(),
             self.serial.0.serial_root.0.id.ident(),
-            quote!(#len as usize),
+            &self.delim_bytes,
         );
     }
 
@@ -73,12 +69,12 @@ impl NodeMethods for NodeDynamicBytes_ {
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let source_ident = self.id.ident();
         let dest_ident = self.serial.0.id.ident();
-        let serial_len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.clone();
-        let dest_len_ident = serial_len.id.ident();
-        let dest_len_type = &serial_len.rust_type;
+        let delim_len = &self.delim_len;
+        let delim_bytes = &self.delim_bytes;
         return quote!{
-            let #dest_len_ident = #source_ident.len() as #dest_len_type;
-            let #dest_ident = #source_ident.as_slice();
+            let mut #dest_ident = #source_ident.clone();
+            #dest_ident.resize(#dest_ident.len() + #delim_len, 0u8);
+            #dest_ident[#source_ident.len()..].copy_from_slice(#delim_bytes);
         };
     }
 
@@ -106,12 +102,12 @@ impl NodeMethods for NodeDynamicBytes_ {
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub struct NodeDynamicBytes(pub(crate) Gc<NodeDynamicBytes_>);
+pub struct NodeDelimitedBytes(pub(crate) Gc<NodeDelimitedBytes_>);
 
-impl Into<Node> for NodeDynamicBytes {
+impl Into<Node> for NodeDelimitedBytes {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::DynamicBytes(self));
+        return Node(crate::node::Node_::DelimitedBytes(self));
     }
 }
 
-derive_forward_node_methods!(NodeDynamicBytes);
+derive_forward_node_methods!(NodeDelimitedBytes);

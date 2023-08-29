@@ -115,6 +115,11 @@ impl NodeMethods for NodeDynamicArray_ {
     fn id(&self) -> String {
         return self.id.clone();
     }
+
+    fn rust_type(&self) -> TokenStream {
+        let elem_type_ident = self.element.0.rust_root.0.type_name.ident();
+        return quote!(std:: vec:: Vec < #elem_type_ident >);
+    }
 }
 
 #[derive(Clone, Trace, Finalize)]

@@ -68,6 +68,10 @@ impl NodeMethods for NodeRustField_ {
     fn id(&self) -> String {
         return self.id.clone();
     }
+
+    fn rust_type(&self) -> TokenStream {
+        unreachable!();
+    }
 }
 
 #[derive(Clone, Trace, Finalize)]
@@ -134,6 +138,10 @@ impl NodeMethods for NodeRustObj_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn rust_type(&self) -> TokenStream {
+        unreachable!();
     }
 }
 

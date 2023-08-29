@@ -154,6 +154,7 @@ pub(crate) fn generate_basic_read(
     source_ident: Ident,
     source_len: TokenStream,
 ) -> TokenStream {
+    let offset_ident = offset_ident();
     let method;
     if gen_ctx.async_ {
         method = quote!(inarybay_runtime::async_::read);
@@ -163,6 +164,28 @@ pub(crate) fn generate_basic_read(
     let read = gen_ctx.wrap_read(node, quote!(#method(#source_ident, #source_len)));
     return quote!{
         let #dest_ident = #read;
+        #offset_ident += #dest_ident.len();
+    };
+}
+
+pub(crate) fn generate_delimited_read(
+    gen_ctx: &GenerateContext,
+    node: &str,
+    dest_ident: Ident,
+    source_ident: Ident,
+    delimiter: &TokenStream,
+) -> TokenStream {
+    let offset_ident = offset_ident();
+    let method;
+    if gen_ctx.async_ {
+        method = quote!(inarybay_runtime::async_::read_delimited);
+    } else {
+        method = quote!(inarybay_runtime::read_delimited);
+    }
+    let read = gen_ctx.wrap_read(node, quote!(#method(#source_ident, #delimiter)));
+    return quote!{
+        let #dest_ident = #read;
+        #offset_ident += #dest_ident.len();
     };
 }
 
@@ -171,8 +194,18 @@ pub(crate) fn generate_basic_write(
     source_ident: Ident,
     serial_ident: Ident,
 ) -> TokenStream {
+    let offset_ident = offset_ident();
     let write = gen_ctx.wrap_write(quote!(#serial_ident.write_all(& #source_ident)));
     return quote!{
         #write;
+        #offset_ident += #source_ident.len();
     };
+}
+
+pub(crate) fn offset_ident() -> Ident {
+    return "offset".ident();
+}
+
+pub(crate) fn rust_type_bytes() -> TokenStream {
+    return quote!(std:: vec:: Vec < u8 >);
 }

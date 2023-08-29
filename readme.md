@@ -8,6 +8,8 @@ Goals
 
 1. Flexibility, supporting all the craziness people do with binary format specs
 
+   The API is simple and flexible by chaining reversible processing steps.
+
    I'm not sure if it's possible to bound all things formats can do. This won't support everything from the get-go, but it's supposed to be structured in such a way that individual new features don't require major rewrites.
 
 2. Unambiguity - specifications are unambiguous, so binary representations with the same spec never change in future versions due to underspecification
@@ -30,7 +32,10 @@ Current features
 
 - Basic schema - primitive types, integers, arrays, enums
 - Serial bit fields
+- Alignment
 - Out of order/split deserialization
+- Custom types (serde, exotic string encodings)
+- Sync and async
 
 To-do features
 
@@ -39,6 +44,10 @@ To-do features
 - Rust bitfields
 - Fixed-length arrays
 - Delimited arrays
-- Variable padding
+
+Not-in-the-short-run features
+
+- Zero-alloc reading/writing
+- Global byte alignment (alignment is relative to the current object, but alignments in an unaligned object will be unaligned)
 
 # How to use it
