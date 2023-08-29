@@ -52,9 +52,13 @@ pub struct Schema_ {
 
 impl Schema_ { }
 
+/// A schema is the entrypoint for generating de/serializers.  A schema currently
+/// generates one module with all the types/functions.  Types will be
+/// deduplicated/reused within a schema.
 #[derive(Clone, Trace, Finalize)]
 pub struct Schema(pub(crate) Gc<GcCell<Schema_>>);
 
+#[derive(Default)]
 pub struct GenerateConfig {
     /// Generate read methods (async or otherwise)
     pub read: bool,
@@ -64,8 +68,8 @@ pub struct GenerateConfig {
     pub sync_: bool,
     /// Generate async (non-blocking) methods
     pub async_: bool,
-    /// Avoid excessive heap allocation... mostly just errors, not quite heap-free at
-    /// this time I'm afraid
+    /// If true, errors are a single pointer with no allocations. (This may be used for
+    /// other memory optimizations in the future.)
     pub low_heap: bool,
 }
 
@@ -130,13 +134,13 @@ impl Schema {
         })));
     }
 
-    /// Define a new de/serializable object.
+    /// Define a new root de/serializable object.
     pub fn object(&self, id: impl Into<String>, name: impl Into<String>) -> Object {
         return Object::new(id, &self, name.into());
     }
 
-    /// Generate code for the described schema.
-    pub fn generate(&self, config: GenerateConfig) -> TokenStream {
+    /// Generate code for the schema.
+    pub fn generate(&self, config: GenerateConfig) -> String {
         let self2 = self.0.borrow();
 
         // Generate types
@@ -437,7 +441,7 @@ impl Schema {
             },
         }
         let imports: Vec<TokenStream> = self.0.borrow().imports.values().cloned().collect();
-        return quote!{
+        return genemichaels::format_ast(syn::parse2::<syn::File>(quote!{
             #![allow(warnings, unused)] 
             //. .
             #(#imports) * 
@@ -445,7 +449,7 @@ impl Schema {
             #use_err 
             //. .
             #(#code) *
-        };
+        }).unwrap(), &genemichaels::FormatConfig::default(), HashMap::new()).unwrap().rendered;
     }
 
     /// Add an import line to the generated code. Deduplicated by naive stringification.

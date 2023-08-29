@@ -58,6 +58,57 @@ Not-in-the-short-run features
 - Zero-alloc reading/writing
 - Global byte alignment (alignment is relative to the current object, but alignments in an unaligned object will be unaligned)
 
+# Example
+
+A minimal versioned data container.
+
+**build.rs**:
+
+```rust
+use std::{
+   path::PathBuf,
+   env,
+   str::FromStr,
+   fs,
+};
+use inarybay::object::Endian;
+use quote::quote;
+
+pub fn main() {
+   println!("cargo:rerun-if-changed=build.rs");
+   let root = PathBuf::from_str(&env::var("CARGO_MANIFEST_DIR").unwrap()).unwrap();
+   let schema = inarybay::schema::Schema::new();
+   let object = schema.object("root", "Versioned");
+   object.add_type_attrs(quote!(#[derive(Debug, PartialEq)]));
+   object.rust_field(
+      "version",
+      object.int("version_int", object.fixed_range("version_bytes", 2), Endian::Big, false),
+   );
+   object.rust_field("data", object.remaining_bytes("data_bytes"));
+   fs::write(root.join("src/versioned.rs"), schema.generate(inarybay::schema::GenerateConfig {
+      read: true,
+      write: true,
+      ..Default::default()
+   }).as_bytes()).unwrap();
+}
+```
+
+Then use it like:
+
+**main.rs**
+
+```rust
+use std::fs::File;
+use crate::versioned::Versioned;
+
+pub fn main() {
+   let mut f = File::open("x.jpg.ver").unwrap();
+   let v = Versioned::read(&mut f).unwrap();
+   println!("x.jpg.ver is {}", v.version);
+   println!("x.jpg.ver length is {}", v.data.len());
+}
+```
+
 # Guide
 
 ## Terminology: The serial-rust axis

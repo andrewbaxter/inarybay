@@ -10,26 +10,50 @@ use inarybay::{
 };
 use quote::quote;
 
+mod example {
+    #![allow(dead_code)]
+
+    use std::{
+        path::PathBuf,
+        env,
+        str::FromStr,
+        fs::{
+            self,
+        },
+    };
+    use inarybay::object::Endian;
+    use quote::quote;
+
+    pub fn main() {
+        println!("cargo:rerun-if-changed=build.rs");
+        let root = PathBuf::from_str(&env::var("CARGO_MANIFEST_DIR").unwrap()).unwrap();
+        let schema = inarybay::schema::Schema::new();
+        let object = schema.object("root", "Versioned");
+        object.add_type_attrs(quote!(#[derive(Debug, PartialEq)]));
+        object.rust_field(
+            "version",
+            object.int("version_int", object.fixed_range("version_bytes", 2), Endian::Big, false),
+        );
+        object.rust_field("data", object.remaining_bytes("data_bytes"));
+        fs::write(root.join("src/versioned.rs"), schema.generate(inarybay::schema::GenerateConfig {
+            read: true,
+            write: true,
+            ..Default::default()
+        }).as_bytes()).unwrap();
+    }
+}
+
 pub fn generate(root: PathBuf) {
     let src = root.join("src");
     let write = |name: &str, s: Schema| {
         let out_path = src.join(format!("gen_{}.rs", name));
-        let ts = s.generate(inarybay::schema::GenerateConfig {
+        fs::write(out_path, s.generate(inarybay::schema::GenerateConfig {
             read: true,
             write: true,
             sync_: true,
             async_: true,
             low_heap: false,
-        }).to_string();
-        match genemichaels::format_str(&ts, &genemichaels::FormatConfig::default()) {
-            Err(e) => {
-                eprintln!("{}: {}", out_path.to_string_lossy(), e);
-                fs::write(out_path, ts.as_bytes()).unwrap();
-            },
-            Ok(formatted) => {
-                fs::write(out_path, formatted.rendered.as_bytes()).unwrap();
-            },
-        };
+        }).as_bytes()).unwrap();
     };
 
     // Fixed bytes
