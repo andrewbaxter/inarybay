@@ -176,6 +176,8 @@ pub(crate) struct Object_ {
     pub(crate) mut_: GcCell<ObjectMut_>,
 }
 
+/// This is a builder for an object that can be (de)serialized.  You can create
+/// these via Schema.
 #[derive(Clone, Trace, Finalize)]
 pub struct Object(pub(crate) Gc<Object_>);
 
@@ -205,9 +207,14 @@ struct Range_ {
     alloc: Rc<RefCell<RangeAlloc>>,
 }
 
+/// This represents a sequence of read/written bytes of fixed length.  It can be
+/// turned into fixed-width data types (int, bool, float, byte array) via Object
+/// methods or further subdivided.
 #[derive(Clone)]
 pub struct Range(Gc<GcCell<Range_>>);
 
+/// This is a builder for an enum-like parse of a binary structure (outputs an enum
+/// in Rust).
 pub struct Enum {
     schema: Schema,
     obj: Object,
@@ -254,11 +261,15 @@ impl Object {
         return out;
     }
 
+    /// Add a structure prefix line like `#[...]` to the object definition.  Call like
+    /// `o.add_type_attrs(quote!(#[Derive(x,y,z)]))`.
     pub fn add_type_attrs(&self, attrs: TokenStream) {
         self.0.mut_.borrow_mut().type_attrs.push(attrs);
     }
 
     // # Node generation
+    /// Read/write a sequence of bytes with a fixed length from the stream next. See
+    /// `Range` for more information on how this can be used.
     pub fn fixed_range(&self, id: impl Into<String>, bytes: usize) -> Range {
         let id = id.into();
         let node_id = self.take_id(id.clone());
@@ -282,6 +293,7 @@ impl Object {
         })));
     }
 
+    /// Select a subrange of a `Range`.
     pub fn subrange(&self, range: &Range, bytes: usize, bits: usize) -> Range {
         let mut range2 = range.0.as_ref().borrow_mut();
         let using = BVec {
@@ -313,6 +325,8 @@ impl Object {
         return out;
     }
 
+    /// Treat a fixed range as a fixed byte array in Rust (like `[u8;4]`).  The range
+    /// must be byte-aligned and of integer byte length.
     pub fn bytes(&self, id: impl Into<String>, range: Range) -> NodeFixedBytes {
         let id = id.into();
         let mut range2 = range.0.as_ref().borrow_mut();
@@ -341,6 +355,10 @@ impl Object {
         return rust;
     }
 
+    /// Treat a fixed range as a an integer.  Currently the range must be 0 bytes and
+    /// 0-8 bits, or >= 1 bytes and 0 bits long (only integer-width integers and
+    /// <integer width bit fields are supported).  The smallest Rust type that is large
+    /// enough to handle all values of the field is selected.
     pub fn int(&self, id: impl Into<String>, range: Range, endian: Endian, signed: bool) -> NodeInt {
         let id = id.into();
         let mut range2 = range.0.as_ref().borrow_mut();
@@ -365,7 +383,19 @@ impl Object {
         return rust;
     }
 
-    pub fn align(&self, id: impl Into<String>, multiple: usize) {
+    /// Align the next serial data read/written.  For example, if a dynamic bytes
+    /// segment reads 5 bytes, then you align to 4 bytes, the next read will be at
+    /// offset 8. This is local to the current object - if a nested object starts
+    /// reading at offset 1, align to 4 will make the subsequent read at global offset
+    /// 5.
+    ///
+    /// `shift` is added to the offset (shifting input phase) before doing alignment
+    /// calculation (effectively a negative shift).  For example, a shift of 1 and
+    /// alignment of 4 will make the next read/write at 3, then 7, etc.
+    ///
+    /// The minimum alignment is 1, minimum shift is 0.  A 0 alignment will result in
+    /// divide by zero.
+    pub fn align(&self, id: impl Into<String>, shift: usize, alignment: usize) {
         let id = id.into();
         let seg = self.seg(&id);
         let serial = NodeAlign(Gc::new(NodeAlign_ {
@@ -373,12 +403,15 @@ impl Object {
             id: self.take_id(id),
             serial_before: self.0.serial_root.0.mut_.borrow().sub_segments.last().cloned(),
             serial: seg.clone(),
-            alignment: multiple,
+            shift: shift,
+            alignment: alignment,
         }));
         seg.0.mut_.borrow_mut().rust = Some(serial.clone().into());
         self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(serial.clone().into());
     }
 
+    /// Read/write a sequence of bytes whose length is determined dynamically by a
+    /// previous integer.
     pub fn dynamic_bytes(&self, id: impl Into<String>, len: NodeInt) -> NodeDynamicBytes {
         let id = id.into();
         let serial = self.seg(&id);
@@ -402,6 +435,7 @@ impl Object {
         return rust;
     }
 
+    /// Read/write a sequence of bytes until the specified delimiter sequence of bytes.
     pub fn delimited_bytes(&self, id: impl Into<String>, delimiter: &[u8]) -> NodeDelimitedBytes {
         self.0.schema.0.borrow_mut().reader_bounds = ReaderBounds::Buffered;
         let id = id.into();
@@ -424,6 +458,7 @@ impl Object {
         return rust;
     }
 
+    /// Read/write until the end of the serial data.
     pub fn remaining_bytes(&self, id: impl Into<String>) -> NodeRemainingBytes {
         let id = id.into();
         let serial = self.seg(&id);
@@ -439,6 +474,8 @@ impl Object {
         return rust;
     }
 
+    /// Read/write an array of objects, with the length (number of objects) specified
+    /// by a previous integer value.
     pub fn dynamic_array(
         &self,
         id: impl Into<String>,
@@ -470,6 +507,9 @@ impl Object {
         return (rust, element);
     }
 
+    /// Read/write an enumeration, where the parsing variation is determined by the
+    /// previously defined tag value.  The tag can be any `match`-able data type (int,
+    /// bool, float, string, byte array).
     pub fn enum_(
         &self,
         id: impl Into<String>,
@@ -510,6 +550,20 @@ impl Object {
         });
     }
 
+    /// Inject a custom node.
+    ///
+    /// * `rust_type` is the end result of the read.
+    ///
+    /// * `serial` is the list of input nodes.
+    ///
+    /// * `read_code` is a function that takes the input node identifiers and an output
+    ///   node identifier and returns statements that produces the Rust type from the
+    ///   inputs and stores it in the output node identifier.
+    ///
+    /// * `write_code` does the opposite, taking the Rust value and producing values for
+    ///   each input node.
+    ///
+    /// See `string_utf8` for an example.
     pub fn custom(
         &self,
         id: impl Into<String>,
@@ -542,6 +596,8 @@ impl Object {
         return rust;
     }
 
+    /// Turn an integer into a boolean value.  0 is false, all other values are true.
+    /// When writing, 1 will be written for true values.
     pub fn bool(&self, id: impl Into<String>, serial: NodeInt) -> NodeCustom {
         let rust_type = serial.0.rust_type.clone();
         return self.custom(
@@ -563,6 +619,8 @@ impl Object {
         );
     }
 
+    /// Turn a fixed-length sequence of bytes into a floating point number. Follows
+    /// IEEE754 per Rust's f32/f64 conversion methods.
     pub fn float(&self, id: impl Into<String>, range: Range, endian: Endian) -> NodeCustom {
         let id = id.into();
         let bytes = self.bytes(format!("{}__bytes", id), range);
@@ -609,6 +667,7 @@ impl Object {
         );
     }
 
+    /// Treat a dynamic-length byte sequence as a UTF-8 string (`String` in Rust).
     pub fn string_utf8(&self, id: impl Into<String>, serial: impl IntoByteVec) -> NodeCustom {
         let id = id.into();
         let err = format!("Error parsing utf8 string in node {}", id);
@@ -628,6 +687,12 @@ impl Object {
         );
     }
 
+    /// On deserialization, confirm that the read `serial` value equals `value`.  On
+    /// serialization, feed `value` into the pipeline.  This value is not available
+    /// post-deserialization, it is only involved in parsing mechanics and checking.
+    /// `value` should be a Rust expression that is compatible with the value of
+    /// `serial`, ex: if `serial` is a bool, value could be `quote!(true)` or
+    /// `quote!(false)`.
     pub fn rust_const(&self, id: impl Into<String>, serial: impl Into<Node>, value: TokenStream) {
         let id = id.into();
         let serial: Node = serial.into();
@@ -645,6 +710,8 @@ impl Object {
         );
     }
 
+    /// Store the read `serial` value in the object with the given `name`.  The type
+    /// will match whatever type `serial` is.
     pub fn rust_field(&self, name: impl Into<String>, serial: impl Into<Node>) {
         let name = name.into();
         let serial = serial.into();
@@ -874,6 +941,7 @@ impl Object {
 }
 
 impl Enum {
+    /// See `add_type_attrs` in `Object`.
     pub fn add_type_attrs(&self, attrs: TokenStream) {
         self.enum_.0.mut_.borrow_mut().type_attrs.push(attrs);
     }
@@ -903,7 +971,11 @@ impl Enum {
         return element;
     }
 
-    /// Define the default variant
+    /// Define the default variant.  This returns the `Object` for defining the variant
+    /// type, as well as a `Node` that represents the unmatched tag value which can be
+    /// used by nodes within the variant type.  If you only need to read the value,
+    /// this can be ignored.  If you need to round-trip, the value needs to be consumed
+    /// so it can be output again upon serialization.
     pub fn default(
         &self,
         id: impl Into<String>,

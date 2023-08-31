@@ -11,6 +11,7 @@ mod gen_const_int;
 mod gen_bool_;
 mod gen_float_;
 mod gen_align;
+mod gen_align_shift;
 mod gen_delimited_bytes;
 mod gen_dynamic_bytes;
 mod gen_remaining_bytes;
@@ -132,6 +133,17 @@ round_trip!(
         g: 1,
     },
     [1u8, 0u8, 0u8, 0u8, 1u8]
+);
+
+round_trip!(
+    test_align_shift,
+    test_align_shift_async;
+    gen_align_shift::T1,
+    gen_align_shift::T1 {
+        f: 1,
+        g: 1,
+    },
+    [1u8, 0u8, 0u8, 1u8]
 );
 
 round_trip!(

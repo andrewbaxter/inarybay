@@ -177,9 +177,20 @@ pub fn generate(root: PathBuf) {
         let o = s.object("root", "T1");
         o.add_type_attrs(quote!(#[derive(Debug, PartialEq)]));
         o.rust_field("f", o.int("g_val", o.fixed_range("range0", 1), Endian::Little, false));
-        o.align("align", 4);
+        o.align("align", 0, 4);
         o.rust_field("g", o.int("f_val", o.fixed_range("range1", 1), Endian::Little, false));
         write("align", s);
+    }
+
+    // Alignment with shift
+    {
+        let s = inarybay::schema::Schema::new();
+        let o = s.object("root", "T1");
+        o.add_type_attrs(quote!(#[derive(Debug, PartialEq)]));
+        o.rust_field("f", o.int("g_val", o.fixed_range("range0", 1), Endian::Little, false));
+        o.align("align", 1, 4);
+        o.rust_field("g", o.int("f_val", o.fixed_range("range1", 1), Endian::Little, false));
+        write("align_shift", s);
     }
 
     // Delimited bytes

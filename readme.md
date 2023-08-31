@@ -52,6 +52,7 @@ Want features
 - Rust bitfields
 - Fixed-length arrays
 - Delimited arrays
+- Unwrap single-field objects
 
 Not-in-the-short-run features
 

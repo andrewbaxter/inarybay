@@ -32,7 +32,17 @@ pub(crate) struct NodeAlign_ {
     pub(crate) id: String,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
+    pub(crate) shift: usize,
     pub(crate) alignment: usize,
+}
+
+impl NodeAlign_ {
+    pub(crate) fn align_expr(&self) -> TokenStream {
+        let shift = self.shift;
+        let alignment = self.alignment;
+        let offset_ident = offset_ident();
+        return quote!(#alignment -((#offset_ident + #shift) % #alignment));
+    }
 }
 
 impl NodeMethods for NodeAlign_ {
@@ -53,14 +63,13 @@ impl NodeMethods for NodeAlign_ {
                 self.serial.0.serial_root.0.id.ident(),
                 quote!(#len_ident),
             );
-        let multiple = self.alignment;
-        let offset_ident = offset_ident();
+        let align = self.align_expr();
         return quote!{
-            let #len_ident = #multiple -(#offset_ident % #multiple);
+            let #len_ident = #align;
             #read 
             //. .
             drop(#len_ident);
-        }
+        };
     }
 
     fn gather_write_deps(&self) -> Vec<Node> {

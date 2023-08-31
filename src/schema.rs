@@ -452,7 +452,8 @@ impl Schema {
         }).unwrap(), &genemichaels::FormatConfig::default(), HashMap::new()).unwrap().rendered;
     }
 
-    /// Add an import line to the generated code. Deduplicated by naive stringification.
+    /// Add an import line to the generated module. Deduplicated by naive
+    /// stringification.
     pub fn add_import(&self, import: TokenStream) {
         self.0.borrow_mut().imports.insert(import.to_string(), import);
     }

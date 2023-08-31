@@ -16,7 +16,6 @@ use crate::{
     util::{
         ToIdent,
         generate_basic_write,
-        offset_ident,
     },
     object::Object,
     derive_forward_node_methods,
@@ -123,11 +122,10 @@ impl NodeMethods for NodeSerialSegment_ {
                 crate::node::Node_::Align(align) => {
                     let align_ident = "align__".ident();
                     let align_ident2 = "align__2".ident();
-                    let alignment = align.0.alignment;
-                    let offset_ident = offset_ident();
+                    let align_expr = align.0.align_expr();
                     let align_write = generate_basic_write(gen_ctx, &align_ident2, &self.serial_root.0.id.ident());
                     return quote!{
-                        let #align_ident = #alignment -(#offset_ident % #alignment);
+                        let #align_ident = #align_expr;
                         if #align_ident > 0 {
                             let mut #align_ident2 = vec ![];
                             #align_ident2.resize(#align_ident, 0u8);
