@@ -4,7 +4,10 @@ use gc::{
     Gc,
     GcCell,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    TokenStream,
+    Ident,
+};
 use quote::{
     quote,
 };
@@ -18,7 +21,6 @@ use crate::{
         NodeSerialSegment,
     },
     util::{
-        ToIdent,
         generate_delimited_read,
         rust_type_bytes,
     },
@@ -36,6 +38,8 @@ pub(crate) struct NodeDelimitedBytesMut_ {
 pub(crate) struct NodeDelimitedBytes_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
     pub(crate) delim_len: usize,
@@ -56,8 +60,8 @@ impl NodeMethods for NodeDelimitedBytes_ {
         return generate_delimited_read(
             gen_ctx,
             &self.id,
-            self.id.ident(),
-            self.serial.0.serial_root.0.id.ident(),
+            self.id_ident.clone(),
+            self.serial.0.serial_root.0.id_ident(),
             &self.delim_bytes,
         );
     }
@@ -67,8 +71,8 @@ impl NodeMethods for NodeDelimitedBytes_ {
     }
 
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let source_ident = self.id.ident();
-        let dest_ident = self.serial.0.id.ident();
+        let source_ident = &self.id_ident;
+        let dest_ident = self.serial.0.id_ident();
         let delim_len = &self.delim_len;
         let delim_bytes = &self.delim_bytes;
         return quote!{
@@ -94,6 +98,10 @@ impl NodeMethods for NodeDelimitedBytes_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
     }
 
     fn rust_type(&self) -> TokenStream {

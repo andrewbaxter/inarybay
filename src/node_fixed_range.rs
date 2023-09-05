@@ -7,6 +7,7 @@ use gc::{
 };
 use proc_macro2::{
     TokenStream,
+    Ident,
 };
 use quote::{
     quote,
@@ -18,7 +19,6 @@ use crate::{
         ToDep,
     },
     util::{
-        ToIdent,
         generate_basic_read,
     },
     object::{
@@ -38,6 +38,8 @@ pub(crate) struct NodeFixedRangeMut_ {
 pub(crate) struct NodeFixedRange_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) serial_before: Option<Node>,
     // NodeSerial or NodeRange
     pub(crate) serial: NodeSerialSegment,
@@ -58,8 +60,8 @@ impl NodeMethods for NodeFixedRange_ {
         return generate_basic_read(
             gen_ctx,
             &self.id,
-            self.id.ident(),
-            self.serial.0.serial_root.0.id.ident(),
+            &self.id_ident,
+            &self.serial.0.serial_root.0.id_ident,
             quote!(#len),
         );
     }
@@ -71,10 +73,10 @@ impl NodeMethods for NodeFixedRange_ {
     }
 
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let dest_ident = self.serial.0.id.ident();
-        let source_ident = self.id.ident();
+        let dest_ident = &self.serial.0.id_ident;
+        let source_ident = &self.id_ident;
         return quote!{
-            let #dest_ident = #source_ident;
+            #dest_ident = #source_ident;
         }
     }
 
@@ -90,6 +92,10 @@ impl NodeMethods for NodeFixedRange_ {
         return self.id.clone();
     }
 
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
+    }
+
     fn rust_type(&self) -> TokenStream {
         unreachable!();
     }
@@ -97,10 +103,10 @@ impl NodeMethods for NodeFixedRange_ {
 
 impl NodeFixedRange_ {
     pub(crate) fn generate_pre_write(&self) -> TokenStream {
-        let dest_ident = self.id.ident();
+        let dest_ident = &self.id_ident;
         let len = self.len_bytes;
         return quote!{
-            let mut #dest_ident = std:: vec:: Vec:: new();
+            #dest_ident = std:: vec:: Vec:: new();
             #dest_ident.resize(#len, 0u8);
         };
     }

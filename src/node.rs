@@ -5,6 +5,7 @@ use gc::{
 };
 use proc_macro2::{
     TokenStream,
+    Ident,
 };
 use crate::{
     node_serial::{
@@ -44,6 +45,7 @@ pub(crate) trait NodeMethods {
     fn set_rust(&self, rust: Node);
     fn scope(&self) -> Object;
     fn id(&self) -> String;
+    fn id_ident(&self) -> Ident;
     fn rust_type(&self) -> TokenStream;
 }
 
@@ -79,6 +81,10 @@ macro_rules! derive_forward_node_methods{
                 return self.0.id();
             }
 
+            fn id_ident(&self) -> Ident {
+                return self.0.id_ident();
+            }
+
             fn rust_type(&self) -> proc_macro2::TokenStream {
                 return self.0.rust_type();
             }
@@ -87,7 +93,6 @@ macro_rules! derive_forward_node_methods{
 }
 
 #[derive(Clone, Trace, Finalize)]
-#[samevariant::samevariant(NodeSameVariant)]
 //. #[enum_dispatch(NodeMethods)]
 pub(crate) enum Node_ {
     Serial(NodeSerial),
@@ -354,6 +359,28 @@ impl NodeMethods for Node_ {
     }
 
     #[inline]
+    fn id_ident(&self) -> Ident {
+        match self {
+            Node_::Serial(inner) => NodeMethods::id_ident(inner),
+            Node_::SerialSegment(inner) => NodeMethods::id_ident(inner),
+            Node_::Align(inner) => NodeMethods::id_ident(inner),
+            Node_::FixedRange(inner) => NodeMethods::id_ident(inner),
+            Node_::FixedBytes(inner) => NodeMethods::id_ident(inner),
+            Node_::Int(inner) => NodeMethods::id_ident(inner),
+            Node_::DynamicBytes(inner) => NodeMethods::id_ident(inner),
+            Node_::DelimitedBytes(inner) => NodeMethods::id_ident(inner),
+            Node_::RemainingBytes(inner) => NodeMethods::id_ident(inner),
+            Node_::DynamicArray(inner) => NodeMethods::id_ident(inner),
+            Node_::Enum(inner) => NodeMethods::id_ident(inner),
+            Node_::EnumDummy(inner) => NodeMethods::id_ident(inner),
+            Node_::Const(inner) => NodeMethods::id_ident(inner),
+            Node_::Custom(inner) => NodeMethods::id_ident(inner),
+            Node_::RustField(inner) => NodeMethods::id_ident(inner),
+            Node_::RustObj(inner) => NodeMethods::id_ident(inner),
+        }
+    }
+
+    #[inline]
     fn rust_type(&self) -> TokenStream {
         match self {
             Node_::Serial(inner) => NodeMethods::rust_type(inner),
@@ -406,6 +433,10 @@ impl NodeMethods for Node {
 
     fn id(&self) -> String {
         return self.0.id();
+    }
+
+    fn id_ident(&self) -> Ident {
+        return self.0.id_ident();
     }
 
     fn rust_type(&self) -> TokenStream {

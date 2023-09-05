@@ -98,14 +98,64 @@ pub mod async_ {
 }
 
 pub mod lowheap_error {
+    use std::fmt::Display;
+
+    #[derive(Debug)]
+    pub enum ReadErrorInner {
+        Io(std::io::Error),
+        Other(&'static str),
+    }
+
+    #[derive(Debug)]
+    pub struct ReadError {
+        pub node: &'static str,
+        pub inner: ReadErrorInner,
+    }
+
+    impl Display for ReadError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            return format_args!("Error reading in node {}: {:?}", self.node, self.inner).fmt(f);
+        }
+    }
+
+    impl std::error::Error for ReadError { }
+
+    impl ReadError {
+        pub fn new(node: &'static str, text: &'static str) -> ReadError {
+            return ReadError {
+                node: node,
+                inner: ReadErrorInner::Other(text),
+            };
+        }
+    }
+
     pub trait ReadErrCtx<T> {
-        fn errorize(self, text: &'static str) -> Result<T, &'static str>;
+        fn errorize(self, node: &'static str, text: &'static str) -> Result<T, ReadError>;
     }
 
     impl<T, E> ReadErrCtx<T> for Result<T, E> {
-        fn errorize(self, text: &'static str) -> Result<T, &'static str> {
+        fn errorize(self, node: &'static str, text: &'static str) -> Result<T, ReadError> {
             match self {
-                Err(_) => return Err(text),
+                Err(_) => return Err(ReadError {
+                    node: node,
+                    inner: ReadErrorInner::Other(text),
+                }),
+                Ok(v) => return Ok(v),
+            }
+        }
+    }
+
+    pub trait ReadErrCtxIo<T> {
+        fn errorize_io(self, node: &'static str) -> Result<T, ReadError>;
+    }
+
+    impl<T> ReadErrCtxIo<T> for Result<T, std::io::Error> {
+        fn errorize_io(self, node: &'static str) -> Result<T, ReadError> {
+            match self {
+                Err(e) => return Err(ReadError {
+                    node: node,
+                    inner: ReadErrorInner::Io(e),
+                }),
                 Ok(v) => return Ok(v),
             }
         }
@@ -117,18 +167,33 @@ pub mod error {
     use std::fmt::Display;
 
     #[derive(Debug)]
+    pub enum ReadErrorInner {
+        Io(std::io::Error),
+        Other(String),
+    }
+
+    #[derive(Debug)]
     pub struct ReadError {
         pub node: &'static str,
-        pub inner: String,
+        pub inner: ReadErrorInner,
     }
 
     impl Display for ReadError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            return format_args!("Error reading in node {}: {}", self.node, self.inner).fmt(f);
+            return format_args!("Error reading in node {}: {:?}", self.node, self.inner).fmt(f);
         }
     }
 
     impl std::error::Error for ReadError { }
+
+    impl ReadError {
+        pub fn new(node: &'static str, text: impl Into<String>) -> ReadError {
+            return ReadError {
+                node: node,
+                inner: ReadErrorInner::Other(text.into()),
+            };
+        }
+    }
 
     pub trait ReadErrCtx<T> {
         fn errorize(self, node: &'static str) -> Result<T, ReadError>;
@@ -139,7 +204,23 @@ pub mod error {
             match self {
                 Err(e) => return Err(ReadError {
                     node: node,
-                    inner: e.to_string(),
+                    inner: ReadErrorInner::Other(e.to_string()),
+                }),
+                Ok(v) => return Ok(v),
+            }
+        }
+    }
+
+    pub trait ReadErrCtxIo<T> {
+        fn errorize_io(self, node: &'static str) -> Result<T, ReadError>;
+    }
+
+    impl<T> ReadErrCtxIo<T> for Result<T, std::io::Error> {
+        fn errorize_io(self, node: &'static str) -> Result<T, ReadError> {
+            match self {
+                Err(e) => return Err(ReadError {
+                    node: node,
+                    inner: ReadErrorInner::Io(e),
                 }),
                 Ok(v) => return Ok(v),
             }

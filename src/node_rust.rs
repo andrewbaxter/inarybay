@@ -4,7 +4,10 @@ use gc::{
     GcCell,
     Gc,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    TokenStream,
+    Ident,
+};
 use quote::quote;
 use crate::{
     node::{
@@ -14,7 +17,6 @@ use crate::{
         ToDep,
     },
     util::{
-        ToIdent,
         LateInit,
     },
     object::Object,
@@ -31,7 +33,11 @@ pub(crate) struct NodeRustFieldMut_ {
 pub(crate) struct NodeRustField_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) field_name: String,
+    #[unsafe_ignore_trace]
+    pub(crate) field_name_ident: Ident,
     pub(crate) obj: NodeRustObj,
     pub(crate) mut_: GcCell<NodeRustFieldMut_>,
 }
@@ -50,11 +56,11 @@ impl NodeMethods for NodeRustField_ {
     }
 
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let obj_ident = self.obj.0.id.ident();
-        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
-        let field_ident = self.field_name.ident();
+        let obj_ident = &self.obj.0.id_ident;
+        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id_ident();
+        let field_ident = &self.field_name_ident;
         return quote!{
-            let #dest_ident =& #obj_ident.#field_ident;
+            #dest_ident = #obj_ident.#field_ident;
         };
     }
 
@@ -68,6 +74,10 @@ impl NodeMethods for NodeRustField_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
     }
 
     fn rust_type(&self) -> TokenStream {
@@ -94,7 +104,11 @@ pub(crate) struct NodeRustObjMut_ {
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeRustObj_ {
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) type_name: String,
+    #[unsafe_ignore_trace]
+    pub(crate) type_name_ident: Ident,
     pub(crate) mut_: GcCell<NodeRustObjMut_>,
 }
 
@@ -104,18 +118,18 @@ impl NodeMethods for NodeRustObj_ {
     }
 
     fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let type_ident = &self.type_name.ident();
-        let dest_ident = self.id.ident();
+        let type_ident = &self.type_name_ident;
+        let dest_ident = &self.id_ident;
         let mut fields = vec![];
         for f in &self.mut_.borrow().fields {
-            let field_ident = &f.0.field_name.ident();
-            let value_ident = f.0.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
+            let field_ident = &f.0.field_name_ident;
+            let value_ident = f.0.mut_.borrow().serial.as_ref().unwrap().primary.id_ident();
             fields.push(quote!{
                 #field_ident: #value_ident,
             });
         }
         return quote!{
-            let #dest_ident = #type_ident {
+            #dest_ident = #type_ident {
                 #(#fields) *
             };
         };
@@ -139,6 +153,10 @@ impl NodeMethods for NodeRustObj_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
     }
 
     fn rust_type(&self) -> TokenStream {

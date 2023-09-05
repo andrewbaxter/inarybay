@@ -7,6 +7,7 @@ use gc::{
 };
 use proc_macro2::{
     TokenStream,
+    Ident,
 };
 use quote::{
     quote,
@@ -21,11 +22,9 @@ use crate::{
         NodeMethods,
         ToDep,
         RedirectRef,
-        Node_,
     },
     node_serial::NodeSerialSegment,
     util::{
-        ToIdent,
         LateInit,
     },
     schema::{
@@ -45,6 +44,8 @@ pub(crate) struct NodeEnumDummyMut_ {
 pub(crate) struct NodeEnumDummy_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     #[unsafe_ignore_trace]
     pub(crate) rust_type: TokenStream,
     pub(crate) mut_: GcCell<NodeEnumDummyMut_>,
@@ -86,6 +87,10 @@ impl NodeMethods for NodeEnumDummy_ {
         return self.id.clone();
     }
 
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
+    }
+
     fn rust_type(&self) -> TokenStream {
         return self.rust_type.clone();
     }
@@ -106,6 +111,8 @@ derive_forward_node_methods!(NodeEnumDummy);
 pub(crate) struct EnumVariant {
     pub(crate) var_name: String,
     #[unsafe_ignore_trace]
+    pub(crate) var_name_ident: Ident,
+    #[unsafe_ignore_trace]
     pub(crate) tag: TokenStream,
     pub(crate) element: Object,
 }
@@ -113,6 +120,8 @@ pub(crate) struct EnumVariant {
 #[derive(Trace, Finalize)]
 pub(crate) struct EnumDefaultVariant {
     pub(crate) var_name: String,
+    #[unsafe_ignore_trace]
+    pub(crate) var_name_ident: Ident,
     #[unsafe_ignore_trace]
     pub(crate) tag: Node,
     pub(crate) element: Object,
@@ -133,7 +142,11 @@ pub(crate) struct NodeEnumMut_ {
 pub(crate) struct NodeEnum_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) type_name: String,
+    #[unsafe_ignore_trace]
+    pub(crate) type_name_ident: Ident,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
     pub(crate) mut_: GcCell<NodeEnumMut_>,
@@ -150,27 +163,27 @@ impl NodeMethods for NodeEnum_ {
     }
 
     fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let type_ident = &self.type_name.ident();
-        let source_ident = self.serial.0.serial_root.0.id.ident();
-        let source_tag_ident = self.mut_.borrow().serial_tag.as_ref().unwrap().primary.id().ident();
-        let dest_ident = self.id.ident();
+        let type_ident = &self.type_name_ident;
+        let source_ident = &self.serial.0.serial_root.0.id_ident;
+        let source_tag_ident = self.mut_.borrow().serial_tag.as_ref().unwrap().primary.id_ident();
+        let dest_ident = &self.id_ident;
         let mut var_code = vec![];
         for v in &self.mut_.borrow().variants {
             let tag = &v.tag;
-            let var_ident = &v.var_name.ident();
-            let elem_ident = v.element.0.rust_root.0.id.ident();
+            let var_ident = &v.var_name_ident;
+            let elem_ident = &v.element.0.rust_root.0.id_ident;
             let elem_code;
             if !v.element.0.mut_.borrow().has_external_deps {
-                let elem_type_ident = v.element.0.rust_root.0.type_name.ident();
+                let elem_type_ident = &v.element.0.rust_root.0.type_name_ident;
                 let method;
                 if gen_ctx.async_ {
                     method = quote!(read_async);
                 } else {
                     method = quote!(read);
                 }
-                let read = gen_ctx.wrap_read(&self.id, quote!(#elem_type_ident:: #method(#source_ident)));
+                let read = gen_ctx.wrap_async(quote!(#elem_type_ident:: #method(#source_ident)));
                 elem_code = quote!{
-                    let #elem_ident = #read;
+                    let #elem_ident = #read ?;
                 }
             } else {
                 elem_code = generate_read(gen_ctx, &v.element.0);
@@ -185,21 +198,21 @@ impl NodeMethods for NodeEnum_ {
         }
         let default_code;
         if let Some(default_v) = &self.mut_.borrow().default_variant {
-            let tag_ident = default_v.tag.id().ident();
-            let var_ident = &default_v.var_name.ident();
-            let elem_ident = default_v.element.0.rust_root.0.id.ident();
+            let tag_ident = default_v.tag.id_ident();
+            let var_ident = &default_v.var_name_ident;
+            let elem_ident = &default_v.element.0.rust_root.0.id_ident;
             let elem_code;
             if !default_v.element.0.mut_.borrow().has_external_deps {
-                let elem_type_ident = default_v.element.0.rust_root.0.type_name.ident();
+                let elem_type_ident = &default_v.element.0.rust_root.0.type_name_ident;
                 let method;
                 if gen_ctx.async_ {
                     method = quote!(read_async);
                 } else {
                     method = quote!(read);
                 }
-                let read = gen_ctx.wrap_read(&self.id, quote!(#elem_type_ident:: #method(#source_ident)));
+                let read = gen_ctx.wrap_async(quote!(#elem_type_ident:: #method(#source_ident)));
                 elem_code = quote!{
-                    let #elem_ident = #read;
+                    #elem_ident = #read ?;
                 }
             } else {
                 elem_code = generate_read(gen_ctx, &default_v.element.0);
@@ -213,7 +226,11 @@ impl NodeMethods for NodeEnum_ {
             };
         } else {
             let err =
-                gen_ctx.new_read_err(&self.id, quote!(format!("Unknown variant with tag {:?}", #source_tag_ident)));
+                gen_ctx.new_read_err(
+                    &self.id,
+                    "Unknown variant tag",
+                    quote!(format!("Unknown variant tag {:?}", #source_tag_ident)),
+                );
             default_code = quote!{
                 _ => {
                     return Err(#err);
@@ -221,7 +238,6 @@ impl NodeMethods for NodeEnum_ {
             };
         }
         return quote!{
-            let #dest_ident;
             match #source_tag_ident {
                 #(#var_code) * 
                 //. .
@@ -235,30 +251,16 @@ impl NodeMethods for NodeEnum_ {
     }
 
     fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let enum_name = &self.type_name.ident();
-        let source_ident = self.id.ident();
-        let dest_tag_ident = self.mut_.borrow().serial_tag.as_ref().unwrap().primary.id().ident();
-        let dest_ident = self.serial.0.id.ident();
+        let enum_name = &self.type_name_ident;
+        let source_ident = &self.id_ident;
+        let dest_tag_ident = &self.mut_.borrow().serial_tag.as_ref().unwrap().primary.id_ident();
+        let dest_ident = &self.serial.0.id_ident;
         let mut var_code = vec![];
-        let mut anchor_external_deps = vec![];
-        for dep in self.mut_.borrow().external_deps.values() {
-            if dep.id() == self.scope.0.serial_root.0.id {
-                continue;
-            }
-            if matches!(dep.0, Node_::FixedRange(_)) {
-                // Already predeclared due to `generate_pre_write`.
-                continue;
-            }
-            let ident = dep.id().ident();
-            anchor_external_deps.push(quote!{
-                let #ident;
-            });
-        }
         for v in &self.mut_.borrow().variants {
             let tag = &v.tag;
-            let variant_name = &v.var_name.ident();
-            let elem_source_ident = v.element.0.rust_root.0.id.ident();
-            let elem_dest_ident = v.element.0.serial_root.0.id.ident();
+            let variant_name = &v.var_name_ident;
+            let elem_source_ident = &v.element.0.rust_root.0.id_ident;
+            let elem_dest_ident = &v.element.0.serial_root.0.id_ident;
             let elem_code;
             if !v.element.0.mut_.borrow().has_external_deps {
                 let method;
@@ -285,10 +287,9 @@ impl NodeMethods for NodeEnum_ {
             });
         }
         if let Some(default_v) = &self.mut_.borrow().default_variant {
-            let tag_ident = &default_v.tag.id().ident();
-            let variant_name = &default_v.var_name.ident();
-            let elem_source_ident = default_v.element.0.rust_root.0.id.ident();
-            let elem_dest_ident = default_v.element.0.serial_root.0.id.ident();
+            let variant_name = &default_v.var_name_ident;
+            let elem_source_ident = &default_v.element.0.rust_root.0.id_ident;
+            let elem_dest_ident = &default_v.element.0.serial_root.0.id_ident;
             let elem_code;
             if !default_v.element.0.mut_.borrow().has_external_deps {
                 let method;
@@ -302,7 +303,12 @@ impl NodeMethods for NodeEnum_ {
                     #write;
                 };
             } else {
-                elem_code = generate_write(gen_ctx, &default_v.element.0);
+                let tag_ident = &default_v.tag.id_ident();
+                let write = generate_write(gen_ctx, &default_v.element.0);
+                elem_code = quote!{
+                    #write;
+                    #dest_tag_ident = #tag_ident;
+                };
             }
             var_code.push(quote!{
                 #enum_name:: #variant_name(#elem_source_ident) => {
@@ -310,15 +316,11 @@ impl NodeMethods for NodeEnum_ {
                     #elem_code 
                     //. .
                     #dest_ident.extend(#elem_dest_ident);
-                    #dest_tag_ident =* #tag_ident;
                 },
             });
         }
         return quote!{
-            let #dest_tag_ident;
-            let mut #dest_ident = vec ![];
-            //. .
-            #(#anchor_external_deps) * 
+            #dest_ident = vec ![];
             //. .
             match #source_ident {
                 #(#var_code) *
@@ -344,8 +346,12 @@ impl NodeMethods for NodeEnum_ {
         return self.id.clone();
     }
 
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
+    }
+
     fn rust_type(&self) -> TokenStream {
-        return self.type_name.ident().into_token_stream();
+        return self.type_name_ident.clone().into_token_stream();
     }
 }
 

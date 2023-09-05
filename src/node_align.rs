@@ -3,7 +3,10 @@ use gc::{
     Trace,
     Gc,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    TokenStream,
+    Ident,
+};
 use quote::{
     quote,
 };
@@ -30,6 +33,8 @@ use crate::{
 pub(crate) struct NodeAlign_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
     pub(crate) shift: usize,
@@ -54,13 +59,13 @@ impl NodeMethods for NodeAlign_ {
     }
 
     fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let len_ident = "len__".ident();
+        let len_ident = "len__".ident().unwrap();
         let read =
             generate_basic_read(
                 gen_ctx,
                 &self.id,
-                self.id.ident(),
-                self.serial.0.serial_root.0.id.ident(),
+                &self.id_ident,
+                &self.serial.0.serial_root.0.id_ident,
                 quote!(#len_ident),
             );
         let align = self.align_expr();
@@ -92,6 +97,10 @@ impl NodeMethods for NodeAlign_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
     }
 
     fn rust_type(&self) -> TokenStream {

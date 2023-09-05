@@ -4,7 +4,10 @@ use gc::{
     GcCell,
     Gc,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    TokenStream,
+    Ident,
+};
 use quote::quote;
 use crate::{
     node::{
@@ -15,7 +18,6 @@ use crate::{
     },
     util::{
         LateInit,
-        ToIdent,
     },
     object::Object,
     derive_forward_node_methods,
@@ -30,6 +32,8 @@ pub(crate) struct NodeConstMut_ {
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeConst_ {
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) mut_: GcCell<NodeConstMut_>,
     #[unsafe_ignore_trace]
     pub(crate) expect: TokenStream,
@@ -41,11 +45,12 @@ impl NodeMethods for NodeConst_ {
     }
 
     fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
+        let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id_ident();
         let expect = &self.expect;
         let to_err =
             gen_ctx.new_read_err(
                 &self.id,
+                "Magic value mismatch",
                 quote!(format!("Expected magic value {:?} but got {:?}", #expect, #source_ident)),
             );
         return quote!{
@@ -60,10 +65,10 @@ impl NodeMethods for NodeConst_ {
     }
 
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id().ident();
+        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.id_ident();
         let expect = &self.expect;
         return quote!{
-            let #dest_ident = #expect;
+            #dest_ident = #expect;
         };
     }
 
@@ -77,6 +82,10 @@ impl NodeMethods for NodeConst_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
     }
 
     fn rust_type(&self) -> TokenStream {

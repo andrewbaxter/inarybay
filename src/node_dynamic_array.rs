@@ -4,11 +4,13 @@ use gc::{
     Gc,
     GcCell,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    TokenStream,
+    Ident,
+};
 use quote::quote;
 use crate::{
     util::{
-        ToIdent,
         LateInit,
     },
     node::{
@@ -37,6 +39,8 @@ pub(crate) struct NodeDynamicArrayMut_ {
 pub(crate) struct NodeDynamicArray_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
     pub(crate) element: Object,
@@ -53,21 +57,21 @@ impl NodeMethods for NodeDynamicArray_ {
     }
 
     fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let dest_ident = self.id.ident();
-        let source_len_ident = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id.ident();
-        let source_ident = self.serial.0.serial_root.0.id.ident();
-        let elem_type_ident = self.element.0.rust_root.0.type_name.ident();
+        let dest_ident = &self.id_ident;
+        let source_len_ident = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id_ident.clone();
+        let source_ident = self.serial.0.serial_root.0.id_ident.clone();
+        let elem_type_ident = self.element.0.rust_root.0.type_name_ident.clone();
         let method;
         if gen_ctx.async_ {
             method = quote!(read_async);
         } else {
             method = quote!(read);
         }
-        let read = gen_ctx.wrap_read(&self.id, quote!(#elem_type_ident:: #method(#source_ident)));
+        let read = gen_ctx.wrap_async(quote!(#elem_type_ident:: #method(#source_ident)));
         return quote!{
             let mut #dest_ident = vec ![];
             for _ in 0..#source_len_ident {
-                #dest_ident.push(#read);
+                #dest_ident.push(#read ?);
             }
         };
     }
@@ -77,11 +81,11 @@ impl NodeMethods for NodeDynamicArray_ {
     }
 
     fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let source_len_ident = self.id.ident();
+        let source_len_ident = self.id_ident();
         let len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.clone();
-        let dest_len_ident = len.id.ident();
+        let dest_len_ident = len.id_ident();
         let dest_len_type = &len.rust_type;
-        let dest_ident = self.serial.0.id.ident();
+        let dest_ident = self.serial.0.id_ident();
         let method;
         if gen_ctx.async_ {
             method = quote!(write_async);
@@ -90,8 +94,8 @@ impl NodeMethods for NodeDynamicArray_ {
         }
         let write = gen_ctx.wrap_write(quote!(e.#method(& mut #dest_ident)));
         return quote!{
-            let #dest_len_ident = #source_len_ident.len() as #dest_len_type;
-            let mut #dest_ident = vec ![];
+            #dest_len_ident = #source_len_ident.len() as #dest_len_type;
+            #dest_ident = vec ![];
             for e in #source_len_ident {
                 #write;
             }
@@ -116,8 +120,12 @@ impl NodeMethods for NodeDynamicArray_ {
         return self.id.clone();
     }
 
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
+    }
+
     fn rust_type(&self) -> TokenStream {
-        let elem_type_ident = self.element.0.rust_root.0.type_name.ident();
+        let elem_type_ident = &self.element.0.rust_root.0.type_name_ident;
         return quote!(std:: vec:: Vec < #elem_type_ident >);
     }
 }

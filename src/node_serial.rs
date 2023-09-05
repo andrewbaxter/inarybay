@@ -5,7 +5,10 @@ use gc::{
     Gc,
     GcCell,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    TokenStream,
+    Ident,
+};
 use quote::quote;
 use crate::{
     node::{
@@ -32,6 +35,8 @@ pub(crate) struct NodeSerialMut_ {
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeSerial_ {
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) mut_: GcCell<NodeSerialMut_>,
 }
 
@@ -67,6 +72,10 @@ impl NodeMethods for NodeSerial_ {
         return self.id.clone();
     }
 
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
+    }
+
     fn rust_type(&self) -> TokenStream {
         unreachable!();
     }
@@ -92,6 +101,8 @@ pub(crate) struct NodeSerialSegmentMut_ {
 pub(crate) struct NodeSerialSegment_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) serial_root: NodeSerial,
     pub(crate) serial_before: Option<NodeSerialSegment>,
     pub(crate) mut_: GcCell<NodeSerialSegmentMut_>,
@@ -120,10 +131,10 @@ impl NodeMethods for NodeSerialSegment_ {
         if let Some(rust) = self.mut_.borrow().rust.as_ref() {
             match &rust.0 {
                 crate::node::Node_::Align(align) => {
-                    let align_ident = "align__".ident();
-                    let align_ident2 = "align__2".ident();
+                    let align_ident = "align__".ident().unwrap();
+                    let align_ident2 = "align__2".ident().unwrap();
                     let align_expr = align.0.align_expr();
-                    let align_write = generate_basic_write(gen_ctx, &align_ident2, &self.serial_root.0.id.ident());
+                    let align_write = generate_basic_write(gen_ctx, &align_ident2, &self.serial_root.0.id_ident);
                     return quote!{
                         let #align_ident = #align_expr;
                         if #align_ident > 0 {
@@ -136,7 +147,7 @@ impl NodeMethods for NodeSerialSegment_ {
                 _ => { },
             }
         }
-        return generate_basic_write(gen_ctx, &self.id.ident(), &self.serial_root.0.id.ident());
+        return generate_basic_write(gen_ctx, &self.id_ident, &self.serial_root.0.id_ident);
     }
 
     fn set_rust(&self, _rust: Node) {
@@ -149,6 +160,10 @@ impl NodeMethods for NodeSerialSegment_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
     }
 
     fn rust_type(&self) -> TokenStream {

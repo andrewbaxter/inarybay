@@ -89,6 +89,7 @@ pub fn main() {
    fs::write(root.join("src/versioned.rs"), schema.generate(inarybay::schema::GenerateConfig {
       read: true,
       write: true,
+      sync: true,
       ..Default::default()
    }).as_bytes()).unwrap();
 }
@@ -180,6 +181,22 @@ Some of the descriptions here are deserialization-oriented, but everything is na
 
 - **`id`** - these are used for variable names in the generated de/serialize code, as well as uniquely identifying nodes for error messages and loop-identification during graph traversal
 - **`TokenStream`** - if an argument has this type, it means it wants some code that will be injected into the generated code. You can generate it with `quote!()` or `quote!{}` (equivalent, use whichever bracket you prefer) from the [quote](https://github.com/dtolnay/quote) crate. The code could be something as simple as a type (like `quote!(my::special::Type)`), an expression (`quote!(#source * 33)`), or multiple statements, depending on what the function requires.
+
+## Troubleshooting
+
+- **Error line numbers**
+
+  The build script uses panics to communicate build errors. By default in `build.rs` these are missing line numbers - to get line numbers do
+
+  ```
+  CARGO_PROFILE_DEV_BUILD_OVERRIDE_DEBUG=true RUST_BACKTRACE=1 cargo build
+  ```
+
+- **Mismatched types**
+
+  When specifying constants using `quote!` using a variable, like `quote!(#i)`, `quote!` appends the literal type suffix. You may need to cast to the right number type before passing it to `quote!` to match the data type of whatever data it's being used with.
+
+  It may be possible to make this more type safe in a future update.
 
 # Design and implementation
 

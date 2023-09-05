@@ -10,7 +10,6 @@ use proc_macro2::{
 };
 use crate::{
     util::{
-        ToIdent,
         BVec,
         LateInit,
     },
@@ -31,17 +30,7 @@ use crate::{
 use quote::{
     quote,
     format_ident,
-    ToTokens,
 };
-
-pub(crate) struct NodeIntArgs {
-    pub(crate) scope: Object,
-    pub(crate) id: String,
-    pub(crate) start: BVec,
-    pub(crate) len: BVec,
-    pub(crate) signed: bool,
-    pub(crate) endian: Endian,
-}
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeIntMut_ {
@@ -53,6 +42,8 @@ pub(crate) struct NodeIntMut_ {
 pub(crate) struct NodeInt_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) start: BVec,
     pub(crate) len: BVec,
     pub(crate) signed: bool,
@@ -61,7 +52,7 @@ pub(crate) struct NodeInt_ {
     // Computed
     pub(crate) rust_bytes: usize,
     #[unsafe_ignore_trace]
-    pub(crate) rust_type: Ident,
+    pub(crate) rust_type: TokenStream,
 }
 
 impl NodeMethods for NodeInt_ {
@@ -70,8 +61,8 @@ impl NodeMethods for NodeInt_ {
     }
 
     fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let dest_ident = self.id.ident();
-        let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
+        let dest_ident = &self.id_ident;
+        let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id_ident();
         if self.len.bytes == 0 {
             if self.start.bits + self.len.bits > 8 {
                 panic!();
@@ -89,7 +80,7 @@ impl NodeMethods for NodeInt_ {
             out = quote!((#out & #serial_mask));
             let rust_type = &self.rust_type;
             return quote!{
-                let #dest_ident = #rust_type:: from_ne_bytes([#out]);
+                #dest_ident = #rust_type:: from_ne_bytes([#out]);
             };
         } else {
             if self.start.bits != 0 {
@@ -154,7 +145,7 @@ impl NodeMethods for NodeInt_ {
                 out = quote!(#out.try_into().unwrap());
             }
             return quote!{
-                let #dest_ident = #rust_type:: #method(#out);
+                #dest_ident = #rust_type:: #method(#out);
             };
         }
     }
@@ -164,8 +155,8 @@ impl NodeMethods for NodeInt_ {
     }
 
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let source_ident = self.id.ident();
-        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id.ident();
+        let source_ident = &self.id_ident;
+        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id_ident();
         if self.len.bytes == 0 {
             if self.start.bits + self.len.bits > 8 {
                 panic!();
@@ -174,7 +165,7 @@ impl NodeMethods for NodeInt_ {
             for _ in 0 .. self.len.bits {
                 serial_mask = serial_mask * 2 + 1;
             }
-            let mut out = quote!((u8:: from_ne_bytes([* #source_ident]) & #serial_mask));
+            let mut out = quote!((u8:: from_ne_bytes([#source_ident]) & #serial_mask));
             let serial_offset = self.start.bits;
             if serial_offset > 0 {
                 out = quote!((#out << #serial_offset));
@@ -234,40 +225,12 @@ impl NodeMethods for NodeInt_ {
         return self.id.clone();
     }
 
-    fn rust_type(&self) -> TokenStream {
-        return self.rust_type.clone().into_token_stream();
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
     }
-}
 
-impl NodeInt {
-    pub(crate) fn new(args: NodeIntArgs) -> NodeInt {
-        let mut rust_bits = (args.len.bytes * 8 + args.len.bits).next_power_of_two();
-        if rust_bits < 8 {
-            rust_bits = 8;
-        }
-        if rust_bits > 64 {
-            panic!("Rust doesn't support ints with >64b width");
-        }
-        let sign_prefix;
-        if args.signed {
-            sign_prefix = "i";
-        } else {
-            sign_prefix = "u";
-        }
-        return NodeInt(Gc::new(NodeInt_ {
-            scope: args.scope,
-            id: args.id,
-            start: args.start,
-            len: args.len,
-            signed: args.signed,
-            endian: args.endian,
-            rust_type: format_ident!("{}{}", sign_prefix, rust_bits),
-            rust_bytes: rust_bits / 8,
-            mut_: GcCell::new(NodeIntMut_ {
-                serial: None,
-                rust: None,
-            }),
-        }));
+    fn rust_type(&self) -> TokenStream {
+        return self.rust_type.clone();
     }
 }
 

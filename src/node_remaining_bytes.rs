@@ -4,7 +4,10 @@ use gc::{
     Gc,
     GcCell,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    TokenStream,
+    Ident,
+};
 use quote::{
     quote,
 };
@@ -18,7 +21,6 @@ use crate::{
         NodeSerialSegment,
     },
     util::{
-        ToIdent,
         generate_basic_read,
         rust_type_bytes,
     },
@@ -36,6 +38,8 @@ pub(crate) struct NodeSuffixBytesMut_ {
 pub(crate) struct NodeRemainingBytes_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
     pub(crate) mut_: GcCell<NodeSuffixBytesMut_>,
@@ -53,8 +57,8 @@ impl NodeMethods for NodeRemainingBytes_ {
         return generate_basic_read(
             gen_ctx,
             &self.id,
-            self.id.ident(),
-            self.serial.0.serial_root.0.id.ident(),
+            &self.id_ident,
+            &self.serial.0.serial_root.0.id_ident,
             quote!(0),
         );
     }
@@ -64,10 +68,10 @@ impl NodeMethods for NodeRemainingBytes_ {
     }
 
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let source_ident = self.id.ident();
-        let dest_ident = self.serial.0.id.ident();
+        let source_ident = &self.id_ident;
+        let dest_ident = &self.serial.0.id_ident;
         return quote!{
-            let #dest_ident = #source_ident;
+            #dest_ident = #source_ident;
         };
     }
 
@@ -87,6 +91,10 @@ impl NodeMethods for NodeRemainingBytes_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
     }
 
     fn rust_type(&self) -> TokenStream {

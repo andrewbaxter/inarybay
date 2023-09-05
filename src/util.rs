@@ -16,7 +16,6 @@ use proc_macro2::{
     TokenStream,
 };
 use quote::{
-    IdentFragment,
     format_ident,
     quote,
 };
@@ -25,12 +24,16 @@ use crate::schema::GenerateContext;
 pub(crate) type LateInit<T> = Option<T>;
 
 pub(crate) trait ToIdent {
-    fn ident(&self) -> Ident;
+    fn ident(&self) -> Result<Ident, String>;
 }
 
-impl<T: IdentFragment> ToIdent for T {
-    fn ident(&self) -> Ident {
-        return format_ident!("{}", self);
+impl<T: Display> ToIdent for T {
+    fn ident(&self) -> Result<Ident, String> {
+        let ident = self.to_string();
+        if !regex::Regex::new("[a-zA-Z][a-zA-Z0-9_]*").unwrap().is_match(&ident) {
+            return Err(format!("{} is not a valid rust identifier", ident));
+        }
+        return Ok(format_ident!("{}", ident));
     }
 }
 
@@ -150,8 +153,8 @@ macro_rules! breaker{
 pub(crate) fn generate_basic_read(
     gen_ctx: &GenerateContext,
     node: &str,
-    dest_ident: Ident,
-    source_ident: Ident,
+    dest_ident: &Ident,
+    source_ident: &Ident,
     source_len: TokenStream,
 ) -> TokenStream {
     let offset_ident = offset_ident();
@@ -199,11 +202,12 @@ pub(crate) fn generate_basic_write(
     return quote!{
         #write;
         #offset_ident += #source_ident.len();
+        drop(#source_ident);
     };
 }
 
 pub(crate) fn offset_ident() -> Ident {
-    return "offset".ident();
+    return "offset".ident().unwrap();
 }
 
 pub(crate) fn rust_type_bytes() -> TokenStream {

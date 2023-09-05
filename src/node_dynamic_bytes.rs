@@ -4,7 +4,10 @@ use gc::{
     Gc,
     GcCell,
 };
-use proc_macro2::TokenStream;
+use proc_macro2::{
+    TokenStream,
+    Ident,
+};
 use quote::{
     quote,
     ToTokens,
@@ -20,7 +23,6 @@ use crate::{
         NodeSerialSegment,
     },
     util::{
-        ToIdent,
         LateInit,
         generate_basic_read,
         rust_type_bytes,
@@ -41,6 +43,8 @@ pub(crate) struct NodeDynamicBytesMut_ {
 pub(crate) struct NodeDynamicBytes_ {
     pub(crate) scope: Object,
     pub(crate) id: String,
+    #[unsafe_ignore_trace]
+    pub(crate) id_ident: Ident,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
     pub(crate) mut_: GcCell<NodeDynamicBytesMut_>,
@@ -56,12 +60,12 @@ impl NodeMethods for NodeDynamicBytes_ {
     }
 
     fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
-        let len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id.ident().to_token_stream();
+        let len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id_ident().to_token_stream();
         return generate_basic_read(
             gen_ctx,
             &self.id,
-            self.id.ident(),
-            self.serial.0.serial_root.0.id.ident(),
+            &self.id_ident,
+            &self.serial.0.serial_root.0.id_ident,
             quote!(#len as usize),
         );
     }
@@ -71,14 +75,14 @@ impl NodeMethods for NodeDynamicBytes_ {
     }
 
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let source_ident = self.id.ident();
-        let dest_ident = self.serial.0.id.ident();
+        let source_ident = &self.id_ident;
+        let dest_ident = &self.serial.0.id_ident;
         let serial_len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.clone();
-        let dest_len_ident = serial_len.id.ident();
+        let dest_len_ident = &serial_len.id_ident;
         let dest_len_type = &serial_len.rust_type;
         return quote!{
-            let #dest_len_ident = #source_ident.len() as #dest_len_type;
-            let #dest_ident = #source_ident.as_slice();
+            #dest_len_ident = #source_ident.len() as #dest_len_type;
+            #dest_ident = #source_ident;
         };
     }
 
@@ -98,6 +102,10 @@ impl NodeMethods for NodeDynamicBytes_ {
 
     fn id(&self) -> String {
         return self.id.clone();
+    }
+
+    fn id_ident(&self) -> Ident {
+        return self.id_ident.clone();
     }
 
     fn rust_type(&self) -> TokenStream {

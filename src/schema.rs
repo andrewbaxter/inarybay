@@ -16,6 +16,7 @@ use proc_macro2::{
 };
 use quote::{
     quote,
+    ToTokens,
 };
 use crate::{
     object::{
@@ -25,12 +26,11 @@ use crate::{
     node::{
         Node,
         Node_,
-        NodeSameVariant,
         NodeMethods,
     },
     util::{
-        ToIdent,
         offset_ident,
+        ToIdent,
     },
     node_enum::NodeEnum,
 };
@@ -45,6 +45,8 @@ pub(crate) enum ReaderBounds {
 pub struct Schema_ {
     #[unsafe_ignore_trace]
     pub(crate) imports: BTreeMap<String, TokenStream>,
+    #[unsafe_ignore_trace]
+    pub(crate) mods: Vec<TokenStream>,
     pub(crate) reader_bounds: ReaderBounds,
     pub(crate) objects: BTreeMap<String, Vec<Object>>,
     pub(crate) enums: BTreeMap<String, Vec<NodeEnum>>,
@@ -81,44 +83,38 @@ pub(crate) struct GenerateContext {
 impl GenerateContext {
     pub(crate) fn read_err_type(&self) -> TokenStream {
         match self.low_heap {
-            true => return quote!(& 'static str),
+            true => return quote!(inarybay_runtime::lowheap_error::ReadError),
             false => return quote!(inarybay_runtime::error::ReadError),
         }
     }
 
-    pub(crate) fn wrap_read_err(&self, node: &str, mut read: TokenStream) -> TokenStream {
-        let text = format!("Error parsing, in node {}", node);
-        read = quote!(#read.errorize(#text) ?);
+    pub(crate) fn wrap_read(&self, node: &str, mut read: TokenStream) -> TokenStream {
+        read = self.wrap_async(read);
+        read = quote!(#read.errorize_io(#node) ?);
         return read;
     }
 
-    pub(crate) fn wrap_read(&self, node: &str, mut read: TokenStream) -> TokenStream {
+    pub(crate) fn wrap_async(&self, mut read: TokenStream) -> TokenStream {
         if self.async_ {
             read = quote!(#read.await);
         }
-        read = self.wrap_read_err(node, read);
         return read;
     }
 
     pub(crate) fn wrap_write(&self, mut write: TokenStream) -> TokenStream {
-        if self.async_ {
-            write = quote!(#write.await);
-        }
+        write = self.wrap_async(write);
         return quote!(#write ?);
     }
 
-    pub(crate) fn new_read_err(&self, node: &str, text: TokenStream) -> TokenStream {
+    pub(crate) fn new_read_err(&self, node: &str, lowheap_text: &str, text: TokenStream) -> TokenStream {
         match self.low_heap {
             true => {
-                let text = format!("Error parsing, in node {}", node);
-                return quote!(#text);
+                let err_type = self.read_err_type();
+                return quote!(#err_type:: new(#node, #lowheap_text));
             },
             false => {
                 let err_type = self.read_err_type();
-                return quote!(#err_type {
-                    node: #node,
-                    inner: #text
-                });
+                return quote!(#err_type:: new(#node, #text));
             },
         }
     }
@@ -128,6 +124,7 @@ impl Schema {
     pub fn new() -> Schema {
         return Schema(Gc::new(GcCell::new(Schema_ {
             imports: BTreeMap::new(),
+            mods: vec![],
             reader_bounds: ReaderBounds::None,
             objects: BTreeMap::new(),
             enums: BTreeMap::new(),
@@ -196,18 +193,18 @@ impl Schema {
             }
 
             // Generate code
-            let type_ident = &first.0.type_name.ident();
+            let type_ident = &first.0.type_name_ident;
             let mut variants = vec![];
             for v in &first.0.mut_.borrow().variants {
-                let var_ident = &v.var_name.ident();
-                let var_type_ident = &v.element.0.rust_root.0.type_name.ident();
+                let var_ident = &v.var_name_ident;
+                let var_type_ident = &v.element.0.rust_root.0.type_name_ident;
                 variants.push(quote!{
                     #var_ident(#var_type_ident),
                 });
             }
             if let Some(default_v) = &first.0.mut_.borrow().default_variant {
-                let var_ident = &default_v.var_name.ident();
-                let var_type_ident = &default_v.element.0.rust_root.0.type_name.ident();
+                let var_ident = &default_v.var_name_ident;
+                let var_type_ident = &default_v.element.0.rust_root.0.type_name_ident;
                 variants.push(quote!{
                     #var_ident(#var_type_ident),
                 });
@@ -239,60 +236,10 @@ impl Schema {
                     if let Some(other_f_value) = other_fields.remove(&first_f.0.field_name) {
                         let first_f_mut = first_f.0.mut_.borrow();
                         let first_f_serial = first_f_mut.serial.as_ref().unwrap();
-                        match NodeSameVariant::pairs(&other_f_value.0, &first_f_serial.primary.0) {
-                            NodeSameVariant::Enum(l, r) => {
-                                let l_type = &l.0.type_name;
-                                let r_type = &r.0.type_name;
-                                if l_type != r_type {
-                                    panic!(
-                                        "Definitions of {} field {} have mismatched enum inner types: {} and {}",
-                                        name,
-                                        first_f.0.field_name,
-                                        l_type,
-                                        r_type
-                                    );
-                                }
-                                let mut l_variants = HashMap::new();
-                                for v in &l.0.mut_.borrow().variants {
-                                    l_variants.insert(v.var_name.to_string(), v.element.clone());
-                                }
-                                for v in &r.0.mut_.borrow().variants {
-                                    if let Some(l_v) = l_variants.remove(&v.var_name.to_string()) {
-                                        let l_type = &l_v.0.rust_root.0.type_name;
-                                        let r_type = &v.element.0.rust_root.0.type_name;
-                                        if l_type != r_type {
-                                            panic!(
-                                                "Definitions of {} enum field {} variant {} have mismatched inner types: {} and {}",
-                                                name,
-                                                first_f.0.field_name,
-                                                v.var_name,
-                                                l_type,
-                                                r_type
-                                            );
-                                        }
-                                    } else {
-                                        panic!(
-                                            "Definitions of {} enum field {} are missing variant {}",
-                                            name,
-                                            first_f.0.field_name,
-                                            v.var_name
-                                        );
-                                    }
-                                }
-                            },
-                            NodeSameVariant::Nonmatching(l, r) => {
-                                let l_type = l.rust_type().to_string();
-                                let r_type = r.rust_type().to_string();
-                                if l_type != r_type {
-                                    panic!(
-                                        "Some definitions of {} have value type {}, others {}",
-                                        name,
-                                        l_type,
-                                        r_type
-                                    );
-                                }
-                            },
-                            _ => unreachable!(),
+                        let l_type = other_f_value.0.rust_type().to_string();
+                        let r_type = first_f_serial.primary.0.rust_type().to_string();
+                        if l_type != r_type {
+                            panic!("Some definitions of {} have value type {}, others {}", name, l_type, r_type);
                         }
                     } else {
                         panic!("Some definitions of {} are missing field {}", name, first_f.0.field_name);
@@ -304,10 +251,10 @@ impl Schema {
             }
 
             // Generate code
-            let type_ident = &first.0.rust_root.0.type_name.ident();
+            let type_ident = &first.0.rust_root.0.type_name_ident;
             let mut fields = vec![];
             for f in &first.0.rust_root.0.mut_.borrow().fields {
-                let field_ident = &f.0.field_name.ident();
+                let field_ident = &f.0.field_name_ident;
                 let field_type = f.0.mut_.borrow().serial.as_ref().unwrap().primary.rust_type();
                 fields.push(quote!{
                     pub #field_ident: #field_type,
@@ -328,8 +275,8 @@ impl Schema {
             if !root.0.mut_.borrow().has_external_deps {
                 let offset_ident = offset_ident();
                 let root_obj = &root.0.rust_root.0;
-                let obj_ident = root_obj.id.ident();
-                let serial_ident = root.0.serial_root.0.id.ident();
+                let obj_ident = &root_obj.id_ident;
+                let serial_ident = &root.0.serial_root.0.id_ident;
                 let mut methods = vec![];
                 if config.read {
                     if config.sync_ {
@@ -386,7 +333,7 @@ impl Schema {
                         let code = generate_write(&gen_ctx, &root.0);
                         methods.push(quote!{
                             pub fn write < W: std:: io:: Write >(
-                                &self,
+                                self,
                                 #serial_ident:& mut W
                             ) -> std:: io:: Result <() > {
                                 let mut #offset_ident = 0usize;
@@ -406,7 +353,7 @@ impl Schema {
                         let code = generate_write(&gen_ctx, &root.0);
                         methods.push(quote!{
                             pub async fn write_async < W: inarybay_runtime:: async_:: AsyncWriteExt + std:: marker:: Unpin >(
-                                &self,
+                                self,
                                 #serial_ident:& mut W
                             ) -> std:: io:: Result <() > {
                                 let mut #offset_ident = 0usize;
@@ -419,7 +366,7 @@ impl Schema {
                         });
                     }
                 }
-                let type_ident = &root_obj.type_name.ident();
+                let type_ident = &root_obj.type_name_ident;
                 code.push(quote!{
                     impl #type_ident {
                         #(#methods) *
@@ -432,30 +379,59 @@ impl Schema {
             true => {
                 use_err = quote!{
                     use inarybay_runtime::lowheap_error::ReadErrCtx;
+                    use inarybay_runtime::lowheap_error::ReadErrCtxIo;
                 };
             },
             false => {
                 use_err = quote!{
                     use inarybay_runtime::error::ReadErrCtx;
+                    use inarybay_runtime::error::ReadErrCtxIo;
                 };
             },
         }
         let imports: Vec<TokenStream> = self.0.borrow().imports.values().cloned().collect();
-        return genemichaels::format_ast(syn::parse2::<syn::File>(quote!{
+        let mut mods = vec![];
+        for mod_ in &self.0.borrow().mods {
+            mods.push(quote!(pub mod #mod_;));
+        }
+        let stream = quote!{
             #![allow(warnings, unused)] 
             //. .
             #(#imports) * 
             //. .
             #use_err 
             //. .
+            #(#mods) * 
+            //. .
             #(#code) *
-        }).unwrap(), &genemichaels::FormatConfig::default(), HashMap::new()).unwrap().rendered;
+        };
+        return genemichaels::format_ast(
+            syn::parse2::<syn::File>(
+                stream.clone(),
+            ).expect(
+                &format!(
+                    "Failed to generate module code; check that any attributes or imports you added have valid Rust syntax\nRaw source: {}",
+                    stream
+                ),
+            ),
+            &genemichaels::FormatConfig::default(),
+            HashMap::new(),
+        )
+            .unwrap()
+            .rendered;
     }
 
     /// Add an import line to the generated module. Deduplicated by naive
     /// stringification.
     pub fn add_import(&self, import: TokenStream) {
         self.0.borrow_mut().imports.insert(import.to_string(), import);
+    }
+
+    /// Add a `pub mod ...` line to the generated module, for if you want to add custom
+    /// implementations or methods to the generated types.
+    pub fn add_mod(&self, name: impl Into<String>) {
+        let ident = name.into().ident().expect("Invalid mod name");
+        self.0.borrow_mut().mods.push(ident.into_token_stream());
     }
 }
 
@@ -471,6 +447,16 @@ pub(crate) fn generate_read(gen_ctx: &GenerateContext, obj: &Object_) -> TokenSt
         stack.push((c.clone().into(), true));
     }
     let mut code = vec![];
+    for (id, info) in &obj.mut_.borrow().level_ids {
+        let Some(info) =& info.read else {
+            continue;
+        };
+        let id = id.ident().unwrap();
+        let rust_type = &info.type_ident;
+        code.push(quote!{
+            let mut #id: #rust_type;
+        });
+    }
     while let Some((node, first_visit)) = stack.pop() {
         if first_visit {
             if !seen.insert(node.id()) {
@@ -500,6 +486,16 @@ pub(crate) fn generate_write(gen_ctx: &GenerateContext, obj: &Object_) -> TokenS
     }
     stack.push((obj.serial_root.clone().into(), true));
     let mut code = vec![];
+    for (id, info) in &obj.mut_.borrow().level_ids {
+        let Some(info) =& info.write else {
+            continue;
+        };
+        let id = id.ident().unwrap();
+        let rust_type = &info.type_ident;
+        code.push(quote!{
+            let mut #id: #rust_type;
+        });
+    }
     while let Some((node, first_visit)) = stack.pop() {
         if first_visit {
             if !seen.insert(node.id()) {
