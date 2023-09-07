@@ -12,18 +12,23 @@ use proc_macro2::{
 use quote::quote;
 use crate::{
     node::{
-        Node,
-        NodeMethods,
-        ToDep,
+        node::{
+            Node,
+            NodeMethods,
+            ToDep,
+        },
     },
     util::{
         ToIdent,
         generate_basic_write,
+        rust_type_bytes,
     },
-    object::Object,
     derive_forward_node_methods,
     schema::GenerateContext,
+    scope::Scope,
 };
+
+use super::node::Node_;
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeSerialMut_ {
@@ -64,7 +69,7 @@ impl NodeMethods for NodeSerial_ {
         unreachable!();
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         unreachable!();
     }
 
@@ -86,7 +91,7 @@ pub(crate) struct NodeSerial(pub(crate) Gc<NodeSerial_>);
 
 impl Into<Node> for NodeSerial {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::Serial(self));
+        return Node(Node_::Serial(self));
     }
 }
 
@@ -99,7 +104,7 @@ pub(crate) struct NodeSerialSegmentMut_ {
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeSerialSegment_ {
-    pub(crate) scope: Object,
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
@@ -130,7 +135,7 @@ impl NodeMethods for NodeSerialSegment_ {
     fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream {
         if let Some(rust) = self.mut_.borrow().rust.as_ref() {
             match &rust.0 {
-                crate::node::Node_::Align(align) => {
+                Node_::Align(align) => {
                     let align_ident = "align__".ident().unwrap();
                     let align_ident2 = "align__2".ident().unwrap();
                     let align_expr = align.0.align_expr();
@@ -154,7 +159,7 @@ impl NodeMethods for NodeSerialSegment_ {
         unreachable!();
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         unreachable!();
     }
 
@@ -167,7 +172,7 @@ impl NodeMethods for NodeSerialSegment_ {
     }
 
     fn rust_type(&self) -> TokenStream {
-        unreachable!();
+        return rust_type_bytes();
     }
 }
 
@@ -176,7 +181,7 @@ pub(crate) struct NodeSerialSegment(pub(crate) Gc<NodeSerialSegment_>);
 
 impl Into<Node> for NodeSerialSegment {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::SerialSegment(self));
+        return Node(Node_::SerialSegment(self));
     }
 }
 

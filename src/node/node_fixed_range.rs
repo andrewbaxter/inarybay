@@ -14,20 +14,23 @@ use quote::{
 };
 use crate::{
     node::{
-        Node,
-        NodeMethods,
-        ToDep,
+        node::{
+            Node,
+            NodeMethods,
+            ToDep,
+        },
+        node_serial::NodeSerialSegment,
     },
     util::{
         generate_basic_read,
+        rust_type_bytes,
     },
-    object::{
-        Object,
-    },
-    node_serial::NodeSerialSegment,
     derive_forward_node_methods,
     schema::GenerateContext,
+    scope::Scope,
 };
+
+use super::node::Node_;
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeFixedRangeMut_ {
@@ -36,7 +39,7 @@ pub(crate) struct NodeFixedRangeMut_ {
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeFixedRange_ {
-    pub(crate) scope: Object,
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
@@ -84,7 +87,7 @@ impl NodeMethods for NodeFixedRange_ {
         self.mut_.borrow_mut().rust.insert(rust.id(), rust);
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         return self.scope.clone();
     }
 
@@ -97,7 +100,7 @@ impl NodeMethods for NodeFixedRange_ {
     }
 
     fn rust_type(&self) -> TokenStream {
-        unreachable!();
+        return rust_type_bytes();
     }
 }
 
@@ -117,7 +120,7 @@ pub(crate) struct NodeFixedRange(pub(crate) Gc<NodeFixedRange_>);
 
 impl Into<Node> for NodeFixedRange {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::FixedRange(self));
+        return Node(Node_::FixedRange(self));
     }
 }
 

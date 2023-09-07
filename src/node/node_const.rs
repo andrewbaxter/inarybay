@@ -11,18 +11,22 @@ use proc_macro2::{
 use quote::quote;
 use crate::{
     node::{
-        Node,
-        RedirectRef,
-        NodeMethods,
-        ToDep,
+        node::{
+            Node,
+            RedirectRef,
+            NodeMethods,
+            ToDep,
+        },
     },
     util::{
         LateInit,
     },
-    object::Object,
     derive_forward_node_methods,
     schema::GenerateContext,
+    scope::Scope,
 };
+
+use super::node::Node_;
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeConstMut_ {
@@ -76,7 +80,7 @@ impl NodeMethods for NodeConst_ {
         unreachable!();
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         unreachable!();
     }
 
@@ -98,7 +102,7 @@ pub(crate) struct NodeConst(pub(crate) Gc<NodeConst_>);
 
 impl Into<Node> for NodeConst {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::Const(self));
+        return Node(Node_::Const(self));
     }
 }
 

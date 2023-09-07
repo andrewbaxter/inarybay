@@ -12,26 +12,30 @@ use quote::{
 };
 use crate::{
     node::{
-        Node,
-        NodeMethods,
-        ToDep,
-    },
-    node_serial::{
-        NodeSerialSegment,
+        node::{
+            Node,
+            NodeMethods,
+            ToDep,
+        },
+        node_serial::{
+            NodeSerialSegment,
+        },
     },
     util::{
         ToIdent,
         generate_basic_read,
         offset_ident,
     },
-    object::Object,
     derive_forward_node_methods,
     schema::GenerateContext,
+    scope::Scope,
 };
+
+use super::node::Node_;
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeAlign_ {
-    pub(crate) scope: Object,
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
@@ -91,7 +95,7 @@ impl NodeMethods for NodeAlign_ {
         unreachable!();
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         return self.scope.clone();
     }
 
@@ -113,7 +117,7 @@ pub struct NodeAlign(pub(crate) Gc<NodeAlign_>);
 
 impl Into<Node> for NodeAlign {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::Align(self));
+        return Node(Node_::Align(self));
     }
 }
 

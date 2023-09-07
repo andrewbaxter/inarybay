@@ -10,56 +10,67 @@ use proc_macro2::{
 };
 use quote::{
     quote,
+    ToTokens,
 };
 use crate::{
     node::{
-        Node,
-        NodeMethods,
-        ToDep,
-    },
-    node_serial::{
-        NodeSerialSegment,
+        node::{
+            Node,
+            RedirectRef,
+            NodeMethods,
+            ToDep,
+        },
+        node_serial::{
+            NodeSerialSegment,
+        },
+        node_int::NodeInt,
     },
     util::{
+        LateInit,
         generate_basic_read,
         rust_type_bytes,
     },
-    object::Object,
     derive_forward_node_methods,
     schema::GenerateContext,
+    scope::Scope,
 };
 
+use super::node::Node_;
+
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeSuffixBytesMut_ {
+pub(crate) struct NodeDynamicBytesMut_ {
+    pub(crate) serial_len: LateInit<RedirectRef<NodeInt, Node>>,
     pub(crate) rust: Option<Node>,
 }
 
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeRemainingBytes_ {
-    pub(crate) scope: Object,
+pub(crate) struct NodeDynamicBytes_ {
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
-    pub(crate) mut_: GcCell<NodeSuffixBytesMut_>,
+    pub(crate) mut_: GcCell<NodeDynamicBytesMut_>,
 }
 
-impl NodeMethods for NodeRemainingBytes_ {
+impl NodeMethods for NodeDynamicBytes_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         let mut out = vec![];
         out.extend(self.serial_before.dep());
+        out.extend(self.mut_.borrow().serial_len.dep());
         out.extend(self.serial.dep());
         return out;
     }
 
     fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
+        let len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id_ident().to_token_stream();
         return generate_basic_read(
             gen_ctx,
             &self.id,
             &self.id_ident,
             &self.serial.0.serial_root.0.id_ident,
-            quote!(0),
+            quote!(#len as usize),
         );
     }
 
@@ -70,7 +81,11 @@ impl NodeMethods for NodeRemainingBytes_ {
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let source_ident = &self.id_ident;
         let dest_ident = &self.serial.0.id_ident;
+        let serial_len = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.clone();
+        let dest_len_ident = &serial_len.id_ident;
+        let dest_len_type = &serial_len.rust_type;
         return quote!{
+            #dest_len_ident = #source_ident.len() as #dest_len_type;
             #dest_ident = #source_ident;
         };
     }
@@ -85,7 +100,7 @@ impl NodeMethods for NodeRemainingBytes_ {
         mut_.rust = Some(rust);
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         return self.scope.clone();
     }
 
@@ -103,12 +118,12 @@ impl NodeMethods for NodeRemainingBytes_ {
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub struct NodeRemainingBytes(pub(crate) Gc<NodeRemainingBytes_>);
+pub struct NodeDynamicBytes(pub(crate) Gc<NodeDynamicBytes_>);
 
-impl Into<Node> for NodeRemainingBytes {
+impl Into<Node> for NodeDynamicBytes {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::RemainingBytes(self));
+        return Node(Node_::DynamicBytes(self));
     }
 }
 
-derive_forward_node_methods!(NodeRemainingBytes);
+derive_forward_node_methods!(NodeDynamicBytes);

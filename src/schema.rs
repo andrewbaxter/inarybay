@@ -3,6 +3,9 @@ use std::{
         HashMap,
         BTreeMap,
         HashSet,
+        btree_map::{
+            Entry,
+        },
     },
 };
 use gc::{
@@ -17,22 +20,23 @@ use proc_macro2::{
 use quote::{
     quote,
     ToTokens,
+    format_ident,
 };
 use crate::{
-    object::{
-        Object,
-        Object_,
-    },
-    node::{
-        Node,
-        Node_,
-        NodeMethods,
-    },
     util::{
         offset_ident,
         ToIdent,
     },
-    node_enum::NodeEnum,
+    node::{
+        node::{
+            Node,
+            Node_,
+            NodeMethods,
+        },
+        node_object::NodeObj,
+        node_enum::NodeEnum,
+    },
+    scope::Scope,
 };
 
 #[derive(Trace, Finalize)]
@@ -48,7 +52,8 @@ pub struct Schema_ {
     #[unsafe_ignore_trace]
     pub(crate) mods: Vec<TokenStream>,
     pub(crate) reader_bounds: ReaderBounds,
-    pub(crate) objects: BTreeMap<String, Vec<Object>>,
+    pub(crate) top_scopes: BTreeMap<String, Scope>,
+    pub(crate) objects: BTreeMap<String, Vec<NodeObj>>,
     pub(crate) enums: BTreeMap<String, Vec<NodeEnum>>,
 }
 
@@ -126,14 +131,26 @@ impl Schema {
             imports: BTreeMap::new(),
             mods: vec![],
             reader_bounds: ReaderBounds::None,
+            top_scopes: BTreeMap::new(),
             objects: BTreeMap::new(),
             enums: BTreeMap::new(),
         })));
     }
 
-    /// Define a new root de/serializable object.
-    pub fn object(&self, id: impl Into<String>, name: impl Into<String>) -> Object {
-        return Object::new(id, &self, name.into());
+    /// See `Scope` for more details. Scopes created directly in the Schema will have
+    /// (de)serialization methods generated. The method names will be prefixed with
+    /// `prefix + "_"` if `prefix` is non-empty.
+    pub fn scope(&self, id: impl Into<String>, prefix: impl Into<String>) -> Scope {
+        let out = Scope::new(id, self);
+        match self.0.borrow_mut().top_scopes.entry(prefix.into()) {
+            Entry::Vacant(e) => {
+                e.insert(out.clone());
+            },
+            Entry::Occupied(_) => {
+                panic!("The prefix for top level scope {} is not unique", out.0.id);
+            },
+        };
+        return out;
     }
 
     /// Generate code for the schema.
@@ -141,7 +158,27 @@ impl Schema {
         let self2 = self.0.borrow();
 
         // Generate types
-        let mut code = vec![];
+        let mut code = vec![quote!{
+            #![allow(warnings, unused)]
+        }];
+        match config.low_heap {
+            true => {
+                code.push(quote!{
+                    use inarybay_runtime::lowheap_error::ReadErrCtx;
+                    use inarybay_runtime::lowheap_error::ReadErrCtxIo;
+                });
+            },
+            false => {
+                code.push(quote!{
+                    use inarybay_runtime::error::ReadErrCtx;
+                    use inarybay_runtime::error::ReadErrCtxIo;
+                });
+            },
+        }
+        code.extend(self.0.borrow().imports.values().cloned());
+        for mod_ in &self.0.borrow().mods {
+            code.push(quote!(pub mod #mod_;));
+        }
         for (name, enums) in &self2.enums {
             let first = enums.first().unwrap();
 
@@ -153,8 +190,8 @@ impl Schema {
                 }
                 for first_v in &first.0.mut_.borrow().variants {
                     if let Some(other_v) = other_variants.remove(&first_v.var_name) {
-                        let first_type = &first_v.element.0.rust_root.0.type_name;
-                        let other_type = &other_v.0.rust_root.0.type_name;
+                        let first_type = &first_v.element.get_rust_root().rust_type().to_string();
+                        let other_type = &other_v.get_rust_root().rust_type().to_string();
                         if first_type != other_type {
                             panic!(
                                 "Definitions of enum {} variant {} have mismatched types: {} and {}",
@@ -174,8 +211,8 @@ impl Schema {
                 match (&first.0.mut_.borrow().default_variant, &other.0.mut_.borrow().default_variant) {
                     (None, None) => { },
                     (Some(first_v), Some(other_v)) => {
-                        let first_type = &first_v.element.0.rust_root.0.type_name;
-                        let other_type = &other_v.element.0.rust_root.0.type_name;
+                        let first_type = &first_v.element.get_rust_root().rust_type().to_string();
+                        let other_type = &other_v.element.get_rust_root().rust_type().to_string();
                         if first_type != other_type {
                             panic!(
                                 "Definitions of enum {} default variant {} have mismatched types: {} and {}",
@@ -197,14 +234,14 @@ impl Schema {
             let mut variants = vec![];
             for v in &first.0.mut_.borrow().variants {
                 let var_ident = &v.var_name_ident;
-                let var_type_ident = &v.element.0.rust_root.0.type_name_ident;
+                let var_type_ident = &v.element.get_rust_root().rust_type();
                 variants.push(quote!{
                     #var_ident(#var_type_ident),
                 });
             }
             if let Some(default_v) = &first.0.mut_.borrow().default_variant {
                 let var_ident = &default_v.var_name_ident;
-                let var_type_ident = &default_v.element.0.rust_root.0.type_name_ident;
+                let var_type_ident = &default_v.element.get_rust_root().rust_type();
                 variants.push(quote!{
                     #var_ident(#var_type_ident),
                 });
@@ -224,7 +261,7 @@ impl Schema {
             // Make sure all definitions are consistent
             for other in &objs[1..] {
                 let mut other_fields = HashMap::new();
-                for f in &other.0.rust_root.0.mut_.borrow().fields {
+                for f in &other.0.mut_.borrow().fields {
                     let f_mut = f.0.mut_.borrow();
                     let f_serial = f_mut.serial.as_ref().unwrap();
                     other_fields.insert(
@@ -232,7 +269,7 @@ impl Schema {
                         f_serial.redirect.clone().unwrap_or_else(|| f_serial.primary.clone()),
                     );
                 }
-                for first_f in &first.0.rust_root.0.mut_.borrow().fields {
+                for first_f in &first.0.mut_.borrow().fields {
                     if let Some(other_f_value) = other_fields.remove(&first_f.0.field_name) {
                         let first_f_mut = first_f.0.mut_.borrow();
                         let first_f_serial = first_f_mut.serial.as_ref().unwrap();
@@ -251,9 +288,9 @@ impl Schema {
             }
 
             // Generate code
-            let type_ident = &first.0.rust_root.0.type_name_ident;
+            let type_ident = &first.0.type_name_ident;
             let mut fields = vec![];
-            for f in &first.0.rust_root.0.mut_.borrow().fields {
+            for f in &first.0.mut_.borrow().fields {
                 let field_ident = &f.0.field_name_ident;
                 let field_type = f.0.mut_.borrow().serial.as_ref().unwrap().primary.rust_type();
                 fields.push(quote!{
@@ -268,141 +305,112 @@ impl Schema {
                     #(#fields) *
                 }
             });
-
-            // Generate de/serialization methods for any objs with self-contained
-            // serialization. (TODO Should maybe check for exactly one serialization format?).
-            let root = first;
-            if !root.0.mut_.borrow().has_external_deps {
-                let offset_ident = offset_ident();
-                let root_obj = &root.0.rust_root.0;
-                let obj_ident = &root_obj.id_ident;
-                let serial_ident = &root.0.serial_root.0.id_ident;
-                let mut methods = vec![];
-                if config.read {
-                    if config.sync_ {
-                        let gen_ctx = GenerateContext {
-                            low_heap: config.low_heap,
-                            async_: false,
-                        };
-                        let reader = match self.0.borrow().reader_bounds {
-                            ReaderBounds::None => quote!(std::io::Read),
-                            ReaderBounds::Buffered => quote!(std::io::BufRead),
-                        };
-                        let code = generate_read(&gen_ctx, &root.0);
-                        let err_ident = gen_ctx.read_err_type();
-                        methods.push(quote!{
-                            pub fn read < R: #reader >(#serial_ident:& mut R) -> Result < Self,
-                            #err_ident > {
-                                let mut #offset_ident = 0usize;
-                                #code 
-                                //. .
-                                return Ok(#obj_ident);
-                            }
-                        });
-                    }
-                    if config.async_ {
-                        let gen_ctx = GenerateContext {
-                            low_heap: config.low_heap,
-                            async_: true,
-                        };
-                        let reader = match self.0.borrow().reader_bounds {
-                            ReaderBounds::None => quote!(inarybay_runtime::async_::AsyncReadExt),
-                            ReaderBounds::Buffered => quote!(inarybay_runtime::async_::AsyncBufReadExt),
-                        };
-                        let code = generate_read(&gen_ctx, &root.0);
-                        let err_ident = gen_ctx.read_err_type();
-                        methods.push(quote!{
-                            pub async fn read_async < R: #reader + std:: marker:: Unpin >(
-                                #serial_ident:& mut R
-                            ) -> Result < Self,
-                            #err_ident > {
-                                let mut #offset_ident = 0usize;
-                                #code 
-                                //. .
-                                return Ok(#obj_ident);
-                            }
-                        });
-                    }
+        }
+        for (prefix, scope) in &self.0.borrow().top_scopes {
+            let prefix = if prefix.is_empty() {
+                "".to_string()
+            } else {
+                format!("{}_", prefix)
+            };
+            let offset_ident = offset_ident();
+            let rust = scope.get_rust_root();
+            let rust_ident = rust.id_ident();
+            let rust_type_ident = rust.rust_type();
+            let serial_ident = &scope.0.serial_root.0.id_ident;
+            if config.read {
+                if config.sync_ {
+                    let gen_ctx = GenerateContext {
+                        low_heap: config.low_heap,
+                        async_: false,
+                    };
+                    let reader = match &self.0.borrow().reader_bounds {
+                        ReaderBounds::None => quote!(std::io::Read),
+                        ReaderBounds::Buffered => quote!(std::io::BufRead),
+                    };
+                    let method_ident = format_ident!("{}read", prefix);
+                    let method_code = generate_read(&gen_ctx, scope);
+                    let err_ident = gen_ctx.read_err_type();
+                    code.push(quote!{
+                        pub fn #method_ident < R: #reader >(#serial_ident:& mut R) -> Result < #rust_type_ident,
+                        #err_ident > {
+                            let mut #offset_ident = 0usize;
+                            #method_code 
+                            //. .
+                            return Ok(#rust_ident);
+                        }
+                    });
                 }
-                if config.write {
-                    if config.sync_ {
-                        let gen_ctx = GenerateContext {
-                            low_heap: config.low_heap,
-                            async_: false,
-                        };
-                        let code = generate_write(&gen_ctx, &root.0);
-                        methods.push(quote!{
-                            pub fn write < W: std:: io:: Write >(
-                                self,
-                                #serial_ident:& mut W
-                            ) -> std:: io:: Result <() > {
-                                let mut #offset_ident = 0usize;
-                                let #obj_ident = self;
-                                //. .
-                                #code 
-                                //. .
-                                return Ok(());
-                            }
-                        });
-                    }
-                    if config.async_ {
-                        let gen_ctx = GenerateContext {
-                            low_heap: config.low_heap,
-                            async_: true,
-                        };
-                        let code = generate_write(&gen_ctx, &root.0);
-                        methods.push(quote!{
-                            pub async fn write_async < W: inarybay_runtime:: async_:: AsyncWriteExt + std:: marker:: Unpin >(
-                                self,
-                                #serial_ident:& mut W
-                            ) -> std:: io:: Result <() > {
-                                let mut #offset_ident = 0usize;
-                                let #obj_ident = self;
-                                //. .
-                                #code 
-                                //. .
-                                return Ok(());
-                            }
-                        });
-                    }
+                if config.async_ {
+                    let gen_ctx = GenerateContext {
+                        low_heap: config.low_heap,
+                        async_: true,
+                    };
+                    let reader = match &self.0.borrow().reader_bounds {
+                        ReaderBounds::None => quote!(inarybay_runtime::async_::AsyncReadExt),
+                        ReaderBounds::Buffered => quote!(inarybay_runtime::async_::AsyncBufReadExt),
+                    };
+                    let method_ident = format_ident!("{}read_async", prefix);
+                    let method_code = generate_read(&gen_ctx, scope);
+                    let err_ident = gen_ctx.read_err_type();
+                    code.push(quote!{
+                        pub async fn #method_ident < R: #reader + std:: marker:: Unpin >(
+                            #serial_ident:& mut R
+                        ) -> Result < #rust_type_ident,
+                        #err_ident > {
+                            let mut #offset_ident = 0usize;
+                            #method_code 
+                            //. .
+                            return Ok(#rust_ident);
+                        }
+                    });
                 }
-                let type_ident = &root_obj.type_name_ident;
-                code.push(quote!{
-                    impl #type_ident {
-                        #(#methods) *
-                    }
-                });
+            }
+            if config.write {
+                if config.sync_ {
+                    let gen_ctx = GenerateContext {
+                        low_heap: config.low_heap,
+                        async_: false,
+                    };
+                    let method_ident = format_ident!("{}write", prefix);
+                    let method_code = generate_write(&gen_ctx, scope);
+                    code.push(quote!{
+                        pub fn #method_ident < W: std:: io:: Write >(
+                            #rust_ident: #rust_type_ident,
+                            #serial_ident:& mut W
+                        ) -> std:: io:: Result <() > {
+                            use std::io::Write;
+                            let mut #offset_ident = 0usize;
+                            //. .
+                            #method_code 
+                            //. .
+                            return Ok(());
+                        }
+                    });
+                }
+                if config.async_ {
+                    let gen_ctx = GenerateContext {
+                        low_heap: config.low_heap,
+                        async_: true,
+                    };
+                    let method_ident = format_ident!("{}write_async", prefix);
+                    let method_code = generate_write(&gen_ctx, scope);
+                    code.push(quote!{
+                        pub async fn #method_ident < W: inarybay_runtime:: async_:: AsyncWriteExt + std:: marker:: Unpin >(
+                            #rust_ident: #rust_type_ident,
+                            #serial_ident:& mut W
+                        ) -> std:: io:: Result <() > {
+                            use inarybay_runtime::async_::AsyncWriteExt;
+                            let mut #offset_ident = 0usize;
+                            //. .
+                            #method_code 
+                            //. .
+                            return Ok(());
+                        }
+                    });
+                }
             }
         }
-        let use_err;
-        match config.low_heap {
-            true => {
-                use_err = quote!{
-                    use inarybay_runtime::lowheap_error::ReadErrCtx;
-                    use inarybay_runtime::lowheap_error::ReadErrCtxIo;
-                };
-            },
-            false => {
-                use_err = quote!{
-                    use inarybay_runtime::error::ReadErrCtx;
-                    use inarybay_runtime::error::ReadErrCtxIo;
-                };
-            },
-        }
-        let imports: Vec<TokenStream> = self.0.borrow().imports.values().cloned().collect();
-        let mut mods = vec![];
-        for mod_ in &self.0.borrow().mods {
-            mods.push(quote!(pub mod #mod_;));
-        }
         let stream = quote!{
-            #![allow(warnings, unused)] 
-            //. .
-            #(#imports) * 
-            //. .
-            #use_err 
-            //. .
-            #(#mods) * 
-            //. .
             #(#code) *
         };
         return genemichaels::format_ast(
@@ -435,24 +443,24 @@ impl Schema {
     }
 }
 
-pub(crate) fn generate_read(gen_ctx: &GenerateContext, obj: &Object_) -> TokenStream {
+pub(crate) fn generate_read(gen_ctx: &GenerateContext, scope: &Scope) -> TokenStream {
     let mut seen = HashSet::new();
     let mut stack: Vec<(Node, bool)> = vec![];
-    stack.push((obj.rust_root.clone().into(), true));
-    for c in &obj.mut_.borrow().rust_extra_roots {
+    stack.push((scope.0.mut_.borrow().rust_root.as_ref().unwrap().clone(), true));
+    for c in &scope.0.mut_.borrow().rust_extra_roots {
         stack.push((c.clone().into(), true));
     }
-    for c in &obj.serial_root.0.mut_.borrow().sub_segments {
+    for c in &scope.0.serial_root.0.mut_.borrow().sub_segments {
         // Make sure to read everything, even if padding, to leave stream in expected state
         stack.push((c.clone().into(), true));
     }
     let mut code = vec![];
-    for (id, info) in &obj.mut_.borrow().level_ids {
-        let Some(info) =& info.read else {
+    for (id, info) in &scope.0.mut_.borrow().level_ids {
+        let Some(node) = info else {
             continue;
         };
         let id = id.ident().unwrap();
-        let rust_type = &info.type_ident;
+        let rust_type = node.rust_type();
         code.push(quote!{
             let mut #id: #rust_type;
         });
@@ -476,22 +484,26 @@ pub(crate) fn generate_read(gen_ctx: &GenerateContext, obj: &Object_) -> TokenSt
     return quote!(#(#code) *);
 }
 
-pub(crate) fn generate_write(gen_ctx: &GenerateContext, obj: &Object_) -> TokenStream {
+pub(crate) fn generate_write(gen_ctx: &GenerateContext, scope: &Scope) -> TokenStream {
     // Read from own id ident, write to serial-side id idents (except serial
     // segment/serial root)
     let mut seen = HashSet::new();
     let mut stack: Vec<(Node, bool)> = vec![];
-    for c in &obj.mut_.borrow().serial_extra_roots {
+    for c in &scope.0.mut_.borrow().serial_extra_roots {
         stack.push((c.clone().into(), true));
     }
-    stack.push((obj.serial_root.clone().into(), true));
+    stack.push((scope.0.serial_root.clone().into(), true));
     let mut code = vec![];
-    for (id, info) in &obj.mut_.borrow().level_ids {
-        let Some(info) =& info.write else {
+    let rust_root_id = scope.get_rust_root().id();
+    for (id, info) in &scope.0.mut_.borrow().level_ids {
+        let Some(node) = info else {
             continue;
         };
+        if *id == rust_root_id {
+            continue;
+        }
         let id = id.ident().unwrap();
-        let rust_type = &info.type_ident;
+        let rust_type = node.rust_type();
         code.push(quote!{
             let mut #id: #rust_type;
         });

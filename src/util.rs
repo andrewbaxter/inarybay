@@ -187,7 +187,7 @@ pub(crate) fn generate_delimited_read(
     }
     let read = gen_ctx.wrap_read(node, quote!(#method(#source_ident, #delimiter)));
     return quote!{
-        let #dest_ident = #read;
+        #dest_ident = #read;
         #offset_ident += #dest_ident.len();
     };
 }

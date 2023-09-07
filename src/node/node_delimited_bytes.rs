@@ -13,21 +13,25 @@ use quote::{
 };
 use crate::{
     node::{
-        Node,
-        NodeMethods,
-        ToDep,
-    },
-    node_serial::{
-        NodeSerialSegment,
+        node::{
+            Node,
+            NodeMethods,
+            ToDep,
+        },
+        node_serial::{
+            NodeSerialSegment,
+        },
     },
     util::{
         generate_delimited_read,
         rust_type_bytes,
     },
-    object::Object,
     derive_forward_node_methods,
     schema::GenerateContext,
+    scope::Scope,
 };
+
+use super::node::Node_;
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeDelimitedBytesMut_ {
@@ -36,7 +40,7 @@ pub(crate) struct NodeDelimitedBytesMut_ {
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeDelimitedBytes_ {
-    pub(crate) scope: Object,
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
@@ -92,7 +96,7 @@ impl NodeMethods for NodeDelimitedBytes_ {
         mut_.rust = Some(rust);
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         return self.scope.clone();
     }
 
@@ -114,7 +118,7 @@ pub struct NodeDelimitedBytes(pub(crate) Gc<NodeDelimitedBytes_>);
 
 impl Into<Node> for NodeDelimitedBytes {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::DelimitedBytes(self));
+        return Node(Node_::DelimitedBytes(self));
     }
 }
 

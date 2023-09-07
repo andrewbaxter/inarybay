@@ -3,16 +3,14 @@ use std::{
         HashMap,
         BTreeMap,
     },
-    cell::{
-        RefCell,
-    },
     rc::Rc,
-    vec,
+    cell::RefCell,
 };
+
 use gc::{
+    GcCell,
     Finalize,
     Trace,
-    GcCell,
     Gc,
 };
 use proc_macro2::{
@@ -28,92 +26,88 @@ use syn::{
     Path,
 };
 use crate::{
+    node::{
+        node_serial::{
+            NodeSerial,
+            NodeSerialSegment,
+            NodeSerialSegment_,
+            NodeSerialSegmentMut_,
+            NodeSerial_,
+            NodeSerialMut_,
+        },
+        node::{
+            Node,
+            NodeMethods,
+            RedirectRef,
+        },
+        node_const::{
+            NodeConst_,
+            NodeConst,
+            NodeConstMut_,
+        },
+        node_custom::{
+            NodeCustom,
+            NodeCustom_,
+            NodeCustomMut_,
+        },
+        node_dynamic_bytes::{
+            NodeDynamicBytes,
+            NodeDynamicBytes_,
+            NodeDynamicBytesMut_,
+        },
+        node_delimited_bytes::{
+            NodeDelimitedBytes,
+            NodeDelimitedBytes_,
+            NodeDelimitedBytesMut_,
+        },
+        node_remaining_bytes::{
+            NodeRemainingBytes,
+            NodeRemainingBytes_,
+            NodeSuffixBytesMut_,
+        },
+        node_enum::{
+            NodeEnum,
+            NodeEnum_,
+            NodeEnumMut_,
+        },
+        node_fixed_range::{
+            NodeFixedRange,
+            NodeFixedRange_,
+            NodeFixedRangeMut_,
+        },
+        node_fixed_bytes::{
+            NodeFixedBytes,
+            NodeFixedBytes_,
+            NodeFixedBytesMut_,
+        },
+        node_int::{
+            NodeInt,
+            NodeInt_,
+            NodeIntMut_,
+        },
+        node_align::{
+            NodeAlign,
+            NodeAlign_,
+        },
+        node_dynamic_array::{
+            NodeDynamicArray,
+            NodeDynamicArray_,
+            NodeDynamicArrayMut_,
+        },
+        node_object::{
+            NodeObj,
+            NodeObj_,
+            NodeObjMut_,
+        },
+    },
     util::{
         BVec,
         LateInit,
         ToIdent,
     },
-    node_serial::{
-        NodeSerial,
-        NodeSerialSegment,
-        NodeSerial_,
-        NodeSerialSegment_,
-        NodeSerialMut_,
-        NodeSerialSegmentMut_,
-    },
-    node_rust::{
-        NodeRustObj,
-        NodeRustField,
-        NodeRustObj_,
-        NodeRustField_,
-        NodeRustObjMut_,
-    },
-    node_const::{
-        NodeConst,
-        NodeConst_,
-        NodeConstMut_,
-    },
     schema::{
-        Schema,
         ReaderBounds,
-    },
-    node::{
-        Node,
-        RedirectRef,
-        NodeMethods,
-    },
-    node_fixed_range::{
-        NodeFixedRange,
-        NodeFixedRange_,
-        NodeFixedRangeMut_,
-    },
-    node_int::{
-        NodeInt,
-        NodeInt_,
-        NodeIntMut_,
-    },
-    node_dynamic_bytes::{
-        NodeDynamicBytes,
-        NodeDynamicBytes_,
-        NodeDynamicBytesMut_,
-    },
-    node_dynamic_array::{
-        NodeDynamicArray,
-        NodeDynamicArray_,
-        NodeDynamicArrayMut_,
-    },
-    node_enum::{
-        NodeEnum,
-        EnumVariant,
-        NodeEnum_,
-        EnumDefaultVariant,
-        NodeEnumDummy,
-        NodeEnumDummy_,
-        NodeEnumDummyMut_,
-    },
-    node_fixed_bytes::{
-        NodeFixedBytes,
-        NodeFixedBytesMut_,
-        NodeFixedBytes_,
-    },
-    node_delimited_bytes::{
-        NodeDelimitedBytes,
-        NodeDelimitedBytesMut_,
-        NodeDelimitedBytes_,
-    },
-    node_remaining_bytes::{
-        NodeRemainingBytes,
-        NodeRemainingBytes_,
-        NodeSuffixBytesMut_,
-    },
-    node_custom::{
-        NodeCustom,
-        NodeCustom_,
-        NodeCustomMut_,
-    },
-    node_align::{
-        NodeAlign,
-        NodeAlign_,
+        Schema,
     },
 };
 
@@ -147,9 +141,9 @@ impl IntoByteVec for NodeRemainingBytes {
 
 #[derive(Clone, Trace, Finalize)]
 pub(crate) struct EscapableParentEnum {
-    enum_: NodeEnum,
-    variant_name: String,
-    parent: Object,
+    pub(crate) enum_: NodeEnum,
+    pub(crate) variant_name: String,
+    pub(crate) parent: Scope,
 }
 
 #[derive(Clone, Trace, Finalize)]
@@ -162,42 +156,6 @@ pub(crate) enum EscapableParent {
 pub(crate) enum SomeEscapableParent {
     Enum(EscapableParentEnum),
 }
-
-pub(crate) struct LevelIdInfoSide {
-    pub(crate) type_ident: TokenStream,
-}
-
-#[derive(Default)]
-pub(crate) struct LevelIdInfo {
-    pub(crate) read: Option<LevelIdInfoSide>,
-    pub(crate) write: Option<LevelIdInfoSide>,
-}
-
-#[derive(Trace, Finalize)]
-pub(crate) struct ObjectMut_ {
-    pub(crate) escapable_parent: EscapableParent,
-    pub(crate) rust_extra_roots: Vec<NodeConst>,
-    pub(crate) serial_extra_roots: Vec<Node>,
-    pub(crate) has_external_deps: bool,
-    #[unsafe_ignore_trace]
-    pub(crate) type_attrs: Vec<TokenStream>,
-    #[unsafe_ignore_trace]
-    pub(crate) level_ids: BTreeMap<String, LevelIdInfo>,
-}
-
-#[derive(Trace, Finalize)]
-pub(crate) struct Object_ {
-    pub(crate) schema: Schema,
-    pub(crate) id: String,
-    pub(crate) serial_root: NodeSerial,
-    pub(crate) rust_root: NodeRustObj,
-    pub(crate) mut_: GcCell<ObjectMut_>,
-}
-
-/// This is a builder for an object that can be (de)serialized.  You can create
-/// these via Schema.
-#[derive(Clone, Trace, Finalize)]
-pub struct Object(pub(crate) Gc<Object_>);
 
 #[derive(Clone, Copy)]
 struct RangeAllocSingle {
@@ -214,7 +172,7 @@ struct RangeAllocEnum {
 
 enum RangeAlloc {
     Unset(RangeAllocSingle),
-    Local(Object, RangeAllocSingle),
+    Local(Scope, RangeAllocSingle),
     Enum(RangeAllocEnum),
 }
 
@@ -231,20 +189,50 @@ struct Range_ {
 #[derive(Clone)]
 pub struct Range(Gc<GcCell<Range_>>);
 
-/// This is a builder for an enum-like parse of a binary structure (outputs an enum
-/// in Rust).
-pub struct Enum {
-    schema: Schema,
-    obj: Object,
-    enum_: NodeEnum,
+#[derive(Trace, Finalize)]
+pub(crate) struct ScopeMut_ {
+    pub(crate) rust_root: Option<Node>,
+    pub(crate) escapable_parent: EscapableParent,
+    pub(crate) rust_extra_roots: Vec<NodeConst>,
+    pub(crate) serial_extra_roots: Vec<Node>,
+    pub(crate) has_external_deps: bool,
+    #[unsafe_ignore_trace]
+    pub(crate) level_ids: BTreeMap<String, Option<Node>>,
 }
 
-impl Object {
+#[derive(Trace, Finalize)]
+pub(crate) struct Scope_ {
+    pub(crate) schema: Schema,
+    pub(crate) id: String,
+    pub(crate) serial_root: NodeSerial,
+    pub(crate) mut_: GcCell<ScopeMut_>,
+}
+
+/// During (de)serialization there is a tree-based accessibility of certain values.
+///  For example, when serializing a Vec, each element is only in scope during that
+/// iteration of the loop, so any nodes depending on it must be evaluated within
+/// that loop iteration.
+///
+/// A `Scope` is a collection representing all the nodes in that _scope_.  In the
+/// above example, there would be a top level `Scope`, then a `Scope` for the
+/// processing within the loop.
+///
+/// `Scope` has methods for creating nodes that will be evaulated within the scope.
+///  In some nesting contexts (enum, object, _not_ array) nodes in an inner scope
+/// can refer to nodes in an outer scope.
+///
+/// The `Scope` also has a defined serial-side and rust-side root which are
+/// starting points for the serialization and deserialization graphs respectively.
+/// The serial root is automatically defined, but you must call `rust_root` to set
+/// the rust-side root with whatever element represents the output of the scope.
+#[derive(Clone, Trace, Finalize)]
+pub struct Scope(pub(crate) Gc<Scope_>);
+
+impl Scope {
     // # Object creation + setup
-    pub(crate) fn new(id: impl Into<String>, schema: &Schema, name: String) -> Object {
+    pub(crate) fn new(id: impl Into<String>, schema: &Schema) -> Scope {
         let id = id.into();
         let serial_id = format!("{}__serial", id);
-        let rust_id = format!("{}__rust", id);
         let serial_root = NodeSerial(Gc::new(NodeSerial_ {
             id: serial_id.clone(),
             id_ident: serial_id.ident().expect("Couldn't convert id into a rust identifier"),
@@ -254,44 +242,22 @@ impl Object {
                 lifted_serial_deps: BTreeMap::new(),
             }),
         }));
-        let rust_root = NodeRustObj(Gc::new(NodeRustObj_ {
-            id: rust_id.clone(),
-            id_ident: rust_id.ident().expect("Couldn't convert id into a rust identifier"),
-            type_name: name.clone(),
-            type_name_ident: name.ident().expect("Couldn't convert name into a rust identifier"),
-            mut_: GcCell::new(NodeRustObjMut_ { fields: vec![] }),
-        }));
-        let out = Object(Gc::new(Object_ {
+        let out = Scope(Gc::new(Scope_ {
             schema: schema.clone(),
             id: id.clone(),
             serial_root: serial_root,
-            rust_root: rust_root,
-            mut_: GcCell::new(ObjectMut_ {
+            mut_: GcCell::new(ScopeMut_ {
                 escapable_parent: EscapableParent::None,
+                rust_root: None,
                 rust_extra_roots: vec![],
                 serial_extra_roots: vec![],
                 has_external_deps: false,
-                type_attrs: vec![],
                 level_ids: BTreeMap::new(),
             }),
         }));
         out.take_id(&id, None);
         out.take_id(&serial_id, None);
-        out.take_id(&rust_id, Some({
-            let type_name_ident = &out.0.rust_root.0.type_name_ident;
-            LevelIdInfo {
-                read: Some(LevelIdInfoSide { type_ident: type_name_ident.to_token_stream() }),
-                write: None,
-            }
-        }));
-        schema.0.as_ref().borrow_mut().objects.entry(name).or_insert_with(Vec::new).push(out.clone());
         return out;
-    }
-
-    /// Add a structure prefix line like `#[...]` to the object definition.  Call like
-    /// `o.add_type_attrs(quote!(#[derive(x,y,z)]))`.
-    pub fn add_type_attrs(&self, attrs: TokenStream) {
-        self.0.mut_.borrow_mut().type_attrs.push(attrs);
     }
 
     // # Node generation
@@ -299,12 +265,8 @@ impl Object {
     /// `Range` for more information on how this can be used.
     pub fn fixed_range(&self, id: impl Into<String>, bytes: usize) -> Range {
         let id = id.into();
-        self.take_id(&id, Some(LevelIdInfo {
-            read: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-            write: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-        }));
         let seg = self.seg(&id);
-        let serial = NodeFixedRange(Gc::new(NodeFixedRange_ {
+        let node = NodeFixedRange(Gc::new(NodeFixedRange_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
@@ -313,10 +275,11 @@ impl Object {
             len_bytes: bytes,
             mut_: GcCell::new(NodeFixedRangeMut_ { rust: BTreeMap::new() }),
         }));
-        seg.0.mut_.borrow_mut().rust = Some(serial.clone().into());
-        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(serial.clone().into());
+        self.take_id(&id, Some(node.clone().into()));
+        seg.0.mut_.borrow_mut().rust = Some(node.clone().into());
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(node.clone().into());
         return Range(Gc::new(GcCell::new(Range_ {
-            serial: serial,
+            serial: node,
             alloc: Rc::new(RefCell::new(RangeAlloc::Unset(RangeAllocSingle {
                 start: BVec::zero(),
                 avail: BVec::bytes(bytes),
@@ -376,31 +339,27 @@ impl Object {
         if using.avail.bits != 0 {
             panic!("Must be whole-byte-sized but has non-zero bit length");
         }
-        let rust_type = {
-            let len = using.avail.bytes;
-            quote!([
-                u8;
-                #len
-            ])
-        };
-        self.take_id(&id, Some(LevelIdInfo {
-            read: Some(LevelIdInfoSide { type_ident: rust_type.to_token_stream() }),
-            write: Some(LevelIdInfoSide { type_ident: rust_type.to_token_stream() }),
-        }));
-        let rust = NodeFixedBytes(Gc::new(NodeFixedBytes_ {
+        let node = NodeFixedBytes(Gc::new(NodeFixedBytes_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Id is not a valid rust identifier"),
             start: using.start.bytes,
             len: using.avail.bytes,
-            rust_type: rust_type,
+            rust_type: {
+                let len = using.avail.bytes;
+                quote!([
+                    u8;
+                    #len
+                ])
+            },
             mut_: GcCell::new(NodeFixedBytesMut_ {
                 serial: None,
                 rust: None,
             }),
         }));
-        self.lift_connect(&ancestry, &range2.serial, rust.clone().into(), &mut rust.0.mut_.borrow_mut().serial);
-        return rust;
+        self.take_id(&id, Some(node.clone().into()));
+        self.lift_connect(&ancestry, &range2.serial, node.clone().into(), &mut node.0.mut_.borrow_mut().serial);
+        return node;
     }
 
     /// Treat a fixed range as a an integer.  Currently the range must be 0 bytes and
@@ -433,11 +392,7 @@ impl Object {
             sign_prefix = "u";
         }
         let rust_type = format_ident!("{}{}", sign_prefix, rust_bits).into_token_stream();
-        self.take_id(&id, Some(LevelIdInfo {
-            read: Some(LevelIdInfoSide { type_ident: rust_type.to_token_stream() }),
-            write: Some(LevelIdInfoSide { type_ident: rust_type.to_token_stream() }),
-        }));
-        let rust = NodeInt(Gc::new(NodeInt_ {
+        let node = NodeInt(Gc::new(NodeInt_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Id could not be turned into an identifier"),
@@ -452,8 +407,9 @@ impl Object {
                 rust: None,
             }),
         }));
-        self.lift_connect(&ancestry, &range2.serial, rust.clone().into(), &mut rust.0.mut_.borrow_mut().serial);
-        return rust;
+        self.take_id(&id, Some(node.clone().into()));
+        self.lift_connect(&ancestry, &range2.serial, node.clone().into(), &mut node.0.mut_.borrow_mut().serial);
+        return node;
     }
 
     /// Align the next serial data read/written.  For example, if a dynamic bytes
@@ -471,7 +427,6 @@ impl Object {
     pub fn align(&self, id: impl Into<String>, shift: usize, alignment: usize) {
         let id = id.into();
         let seg = self.seg(&id);
-        self.take_id(&id, None);
         let serial = NodeAlign(Gc::new(NodeAlign_ {
             scope: self.clone(),
             id: id.clone(),
@@ -481,6 +436,7 @@ impl Object {
             shift: shift,
             alignment: alignment,
         }));
+        self.take_id(&id, None);
         seg.0.mut_.borrow_mut().rust = Some(serial.clone().into());
         self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(serial.clone().into());
     }
@@ -490,11 +446,7 @@ impl Object {
     pub fn dynamic_bytes(&self, id: impl Into<String>, len: NodeInt) -> NodeDynamicBytes {
         let id = id.into();
         let serial = self.seg(&id);
-        self.take_id(&id, Some(LevelIdInfo {
-            read: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-            write: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-        }));
-        let rust = NodeDynamicBytes(Gc::new(NodeDynamicBytes_ {
+        let node = NodeDynamicBytes(Gc::new(NodeDynamicBytes_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
@@ -505,14 +457,15 @@ impl Object {
                 rust: None,
             }),
         }));
-        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(rust.clone().into());
+        self.take_id(&id, Some(node.clone().into()));
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(node.clone().into());
         self.lift_connect(
             &self.get_ancestry_to(&len),
             &len,
-            rust.clone().into(),
-            &mut rust.0.mut_.borrow_mut().serial_len,
+            node.clone().into(),
+            &mut node.0.mut_.borrow_mut().serial_len,
         );
-        return rust;
+        return node;
     }
 
     /// Read/write a sequence of bytes until the specified delimiter sequence of bytes.
@@ -524,11 +477,7 @@ impl Object {
         for b in delimiter {
             delim_els.push(quote!(#b));
         }
-        self.take_id(&id, Some(LevelIdInfo {
-            read: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-            write: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-        }));
-        let rust = NodeDelimitedBytes(Gc::new(NodeDelimitedBytes_ {
+        let node = NodeDelimitedBytes(Gc::new(NodeDelimitedBytes_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
@@ -538,20 +487,17 @@ impl Object {
             delim_bytes: quote!(&[#(#delim_els,) *]),
             mut_: GcCell::new(NodeDelimitedBytesMut_ { rust: None }),
         }));
-        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(rust.clone().into());
-        serial.0.mut_.borrow_mut().rust = Some(rust.clone().into());
-        return rust;
+        self.take_id(&id, Some(node.clone().into()));
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(node.clone().into());
+        serial.0.mut_.borrow_mut().rust = Some(node.clone().into());
+        return node;
     }
 
     /// Read/write until the end of the serial data.
     pub fn remaining_bytes(&self, id: impl Into<String>) -> NodeRemainingBytes {
         let id = id.into();
         let serial = self.seg(&id);
-        self.take_id(&id, Some(LevelIdInfo {
-            read: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-            write: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-        }));
-        let rust = NodeRemainingBytes(Gc::new(NodeRemainingBytes_ {
+        let node = NodeRemainingBytes(Gc::new(NodeRemainingBytes_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
@@ -559,100 +505,39 @@ impl Object {
             serial: serial.clone(),
             mut_: GcCell::new(NodeSuffixBytesMut_ { rust: None }),
         }));
-        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(rust.clone().into());
-        serial.0.mut_.borrow_mut().rust = Some(rust.clone().into());
-        return rust;
+        self.take_id(&id, Some(node.clone().into()));
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(node.clone().into());
+        serial.0.mut_.borrow_mut().rust = Some(node.clone().into());
+        return node;
     }
 
     /// Read/write an array of objects, with the length (number of objects) specified
     /// by a previous integer value.
-    pub fn dynamic_array(
-        &self,
-        id: impl Into<String>,
-        len: NodeInt,
-        obj_name: impl Into<String>,
-    ) -> (NodeDynamicArray, Object) {
+    pub fn dynamic_array(&self, id: impl Into<String>, len: NodeInt) -> (NodeDynamicArray, Scope) {
         let id = id.into();
         let serial = self.seg(&id);
-        let obj_name = obj_name.into();
-        let element = Object::new(&format!("{}__elem", id), &self.0.schema, obj_name);
-        self.take_id(&id, {
-            let element_type_ident = &element.0.rust_root.0.type_name_ident;
-            Some(LevelIdInfo {
-                read: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < #element_type_ident >) }),
-                write: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < #element_type_ident >) }),
-            })
-        });
-        let rust = NodeDynamicArray(Gc::new(NodeDynamicArray_ {
+        let scope = Scope::new(&format!("{}__scope", id), &self.0.schema);
+        let node = NodeDynamicArray(Gc::new(NodeDynamicArray_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
             serial_before: self.0.serial_root.0.mut_.borrow().sub_segments.last().cloned(),
             serial: serial,
-            element: element.clone(),
+            element: scope.clone(),
             mut_: GcCell::new(NodeDynamicArrayMut_ {
                 serial_len: None,
                 rust: None,
             }),
         }));
-        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(rust.clone().into());
+        self.take_id(&id, Some(node.clone().into()));
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(node.clone().into());
         self.lift_connect(
             &self.get_ancestry_to(&len),
             &len,
-            rust.clone().into(),
-            &mut rust.0.mut_.borrow_mut().serial_len,
+            node.clone().into(),
+            &mut node.0.mut_.borrow_mut().serial_len,
         );
-        return (rust, element);
-    }
-
-    /// Read/write an enumeration, where the parsing variation is determined by the
-    /// previously defined tag value.  The tag can be any `match`-able data type (int,
-    /// bool, float, string, byte array).
-    pub fn enum_(
-        &self,
-        id: impl Into<String>,
-        tag: impl Into<Node>,
-        enum_name: impl Into<String>,
-    ) -> (NodeEnum, Enum) {
-        let id = id.into();
-        let tag = tag.into();
-        let serial = self.seg(&id);
-        let enum_name = enum_name.into();
-        let enum_name_ident = enum_name.ident().expect("Couldn't convert enum name into a rust identifier");
-        self.take_id(&id, Some(LevelIdInfo {
-            read: Some(LevelIdInfoSide { type_ident: enum_name_ident.to_token_stream() }),
-            write: Some(LevelIdInfoSide { type_ident: enum_name_ident.to_token_stream() }),
-        }));
-        let rust = NodeEnum(Gc::new(NodeEnum_ {
-            scope: self.clone(),
-            id: id.clone(),
-            id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
-            type_name: enum_name.clone(),
-            type_name_ident: enum_name_ident,
-            serial_before: self.0.serial_root.0.mut_.borrow().sub_segments.last().cloned(),
-            serial: serial,
-            mut_: GcCell::new(crate::node_enum::NodeEnumMut_ {
-                serial_tag: None,
-                variants: vec![],
-                default_variant: None,
-                rust: None,
-                external_deps: BTreeMap::new(),
-                type_attrs: vec![],
-            }),
-        }));
-        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(rust.clone().into());
-        self.0.schema.0.as_ref().borrow_mut().enums.entry(enum_name).or_insert_with(Vec::new).push(rust.clone());
-        self.lift_connect(
-            &self.get_ancestry_to(&tag),
-            &tag,
-            rust.clone().into(),
-            &mut rust.0.mut_.borrow_mut().serial_tag,
-        );
-        return (rust.clone(), Enum {
-            schema: self.0.schema.clone(),
-            obj: self.clone(),
-            enum_: rust,
-        });
+        return (node, scope);
     }
 
     /// Inject a custom node.
@@ -678,12 +563,8 @@ impl Object {
         serial: Vec<Node>,
     ) -> NodeCustom {
         let id = id.into();
-        self.take_id(&id, Some(LevelIdInfo {
-            read: Some(LevelIdInfoSide { type_ident: rust_type.clone() }),
-            write: Some(LevelIdInfoSide { type_ident: rust_type.clone() }),
-        }));
         syn::parse2::<Path>(rust_type.clone()).expect("Rust type isn't a valid type");
-        let rust = NodeCustom(Gc::new(NodeCustom_ {
+        let node = NodeCustom(Gc::new(NodeCustom_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
@@ -695,16 +576,17 @@ impl Object {
                 rust: None,
             }),
         }));
+        self.take_id(&id, Some(node.clone().into()));
         for arg in serial {
-            rust.0.mut_.borrow_mut().serial.push(None);
+            node.0.mut_.borrow_mut().serial.push(None);
             self.lift_connect(
                 &self.get_ancestry_to(&arg),
                 &arg,
-                rust.clone().into(),
-                rust.0.mut_.borrow_mut().serial.last_mut().unwrap(),
+                node.clone().into(),
+                node.0.mut_.borrow_mut().serial.last_mut().unwrap(),
             );
         }
-        return rust;
+        return node;
     }
 
     /// Turn an integer into a boolean value.  0 is false, all other values are true.
@@ -803,7 +685,7 @@ impl Object {
     /// `value` should be a Rust expression that is compatible with the value of
     /// `serial`, ex: if `serial` is a bool, value could be `quote!(true)` or
     /// `quote!(false)`.
-    pub fn rust_const(&self, id: impl Into<String>, serial: impl Into<Node>, value: TokenStream) {
+    pub fn const_(&self, id: impl Into<String>, serial: impl Into<Node>, value: TokenStream) {
         let id = id.into();
         self.take_id(&id, None);
         let serial: Node = serial.into();
@@ -822,33 +704,81 @@ impl Object {
         );
     }
 
-    /// Store the read `serial` value in the object with the given `name`.  The type
-    /// will match whatever type `serial` is.
-    pub fn rust_field(&self, name: impl Into<String>, serial: impl Into<Node>) {
-        let name = name.into();
-        let id = name.clone();
-        self.take_id(&id, None);
-        let serial = serial.into();
-        let rust = NodeRustField(Gc::new(NodeRustField_ {
+    /// Read/write a rust struct.
+    pub fn object(&self, id: impl Into<String>, obj_name: impl Into<String>) -> NodeObj {
+        let id = id.into();
+        let name = obj_name.into();
+        let type_name_ident = name.ident().expect("Couldn't convert name into a rust identifier");
+        let node = NodeObj(Gc::new(NodeObj_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
-            field_name: name.clone(),
-            field_name_ident: name.ident().expect("Couldn't convert field name into a rust identifier"),
-            obj: self.0.rust_root.clone(),
-            mut_: GcCell::new(crate::node_rust::NodeRustFieldMut_ { serial: None }),
+            type_name: name.clone(),
+            type_name_ident: type_name_ident.clone(),
+            mut_: GcCell::new(NodeObjMut_ {
+                fields: vec![],
+                type_attrs: vec![],
+            }),
         }));
-        self.0.rust_root.0.mut_.borrow_mut().fields.push(rust.clone());
+        self.take_id(&id, Some(node.clone().into()));
+        self.0.schema.0.as_ref().borrow_mut().objects.entry(name).or_insert_with(Vec::new).push(node.clone());
+        return node;
+    }
+
+    /// Read/write an enumeration, where the parsing variation is determined by the
+    /// previously defined tag value.  The tag can be any `match`-able data type (int,
+    /// bool, float, string, byte array).
+    pub fn enum_(&self, id: impl Into<String>, tag: impl Into<Node>, enum_name: impl Into<String>) -> NodeEnum {
+        let id = id.into();
+        let tag = tag.into();
+        let serial = self.seg(&id);
+        let enum_name = enum_name.into();
+        let enum_name_ident = enum_name.ident().expect("Couldn't convert enum name into a rust identifier");
+        let node = NodeEnum(Gc::new(NodeEnum_ {
+            scope: self.clone(),
+            id: id.clone(),
+            id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
+            type_name: enum_name.clone(),
+            type_name_ident: enum_name_ident,
+            serial_before: self.0.serial_root.0.mut_.borrow().sub_segments.last().cloned(),
+            serial: serial,
+            mut_: GcCell::new(NodeEnumMut_ {
+                serial_tag: None,
+                variants: vec![],
+                default_variant: None,
+                rust: None,
+                external_deps: BTreeMap::new(),
+                type_attrs: vec![],
+            }),
+        }));
+        self.take_id(&id, Some(node.clone().into()));
+        self.0.serial_root.0.mut_.borrow_mut().sub_segments.push(node.clone().into());
+        self.0.schema.0.as_ref().borrow_mut().enums.entry(enum_name).or_insert_with(Vec::new).push(node.clone());
         self.lift_connect(
-            &self.get_ancestry_to(&serial),
-            &serial,
-            rust.clone().into(),
-            &mut rust.0.mut_.borrow_mut().serial,
+            &self.get_ancestry_to(&tag),
+            &tag,
+            node.clone().into(),
+            &mut node.0.mut_.borrow_mut().serial_tag,
         );
+        return node;
+    }
+
+    /// Set the rust-side root for (de)serialization.  During serialization, this will
+    /// be the argument to the `write` function.  During deserialization, this will be
+    /// the return value.
+    pub fn rust_root(&self, rust: impl Into<Node>) {
+        let mut self2 = self.0.mut_.borrow_mut();
+        match &self2.rust_root {
+            Some(o) => {
+                panic!("A rust root has already been defined for this scope: {}", o.id());
+            },
+            None => { },
+        }
+        self2.rust_root = Some(rust.into());
     }
 
     // # Internal
-    fn take_id(&self, id: &String, info: Option<LevelIdInfo>) {
+    pub(crate) fn take_id(&self, id: &String, node: Option<Node>) {
         let mut at = self.clone();
         loop {
             if at.0.mut_.borrow().level_ids.contains_key(id) {
@@ -864,20 +794,23 @@ impl Object {
                 },
             };
         }
-        self.0.mut_.borrow_mut().level_ids.insert(id.clone(), info.unwrap_or_default());
+        self.0.mut_.borrow_mut().level_ids.insert(id.clone(), node);
     }
 
-    fn id(&self) -> String {
-        return self.0.id.clone();
+    pub(crate) fn get_rust_root(&self) -> Node {
+        return self
+            .0
+            .mut_
+            .borrow()
+            .rust_root
+            .as_ref()
+            .expect(&format!("Scope {} has no defined rust root", self.0.id))
+            .clone();
     }
 
     fn seg(&self, id: &str) -> NodeSerialSegment {
         let id = format!("{}__serial_seg", id);
-        self.take_id(&id, Some(LevelIdInfo {
-            read: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-            write: Some(LevelIdInfoSide { type_ident: quote!(std:: vec:: Vec < u8 >) }),
-        }));
-        let out = NodeSerialSegment(Gc::new(NodeSerialSegment_ {
+        let node = NodeSerialSegment(Gc::new(NodeSerialSegment_ {
             scope: self.clone(),
             id: id.clone(),
             id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
@@ -885,15 +818,16 @@ impl Object {
             serial_before: self.0.serial_root.0.mut_.borrow().segments.last().cloned(),
             mut_: GcCell::new(NodeSerialSegmentMut_ { rust: None }),
         }));
-        self.0.serial_root.0.mut_.borrow_mut().segments.push(out.clone());
-        return out;
+        self.take_id(&id, Some(node.clone().into()));
+        self.0.serial_root.0.mut_.borrow_mut().segments.push(node.clone());
+        return node;
     }
 
-    fn get_ancestry_to(&self, serial: &dyn NodeMethods) -> Vec<SomeEscapableParent> {
+    pub(crate) fn get_ancestry_to(&self, serial: &dyn NodeMethods) -> Vec<SomeEscapableParent> {
         let mut ancestry = vec![];
         let mut at = self.clone();
         loop {
-            if at.id() == serial.scope().id() {
+            if at.0.id == serial.scope().0.id {
                 break;
             }
             let nesting_parent = at.0.mut_.borrow().escapable_parent.clone();
@@ -1002,7 +936,7 @@ impl Object {
         }
     }
 
-    fn lift_connect<
+    pub(crate) fn lift_connect<
         T: Clone + NodeMethods + Into<Node> + Trace + Finalize,
     >(
         &self,
@@ -1058,86 +992,5 @@ impl Object {
                 redirect: Some(self.0.serial_root.clone().into()),
             });
         }
-    }
-}
-
-impl Enum {
-    /// See `add_type_attrs` in `Object`.
-    pub fn add_type_attrs(&self, attrs: TokenStream) {
-        self.enum_.0.mut_.borrow_mut().type_attrs.push(attrs);
-    }
-
-    /// Define a new variant in the enum.  `tag` is a literal that will be used in the
-    /// match case for the tag value the enum reads.
-    pub fn variant(
-        &self,
-        id: impl Into<String>,
-        variant_name: impl Into<String>,
-        obj_name: impl Into<String>,
-        tag: TokenStream,
-    ) -> Object {
-        let id = id.into();
-        let variant_name = variant_name.into();
-        let element = Object::new(id, &self.schema, obj_name.into());
-        self.enum_.0.mut_.borrow_mut().variants.push(EnumVariant {
-            var_name: variant_name.clone(),
-            var_name_ident: variant_name.ident().expect("Couldn't convert variant name into a rust identifier"),
-            tag: tag,
-            element: element.clone(),
-        });
-        element.0.mut_.borrow_mut().escapable_parent = EscapableParent::Enum(EscapableParentEnum {
-            enum_: self.enum_.clone(),
-            variant_name: variant_name,
-            parent: self.obj.clone(),
-        });
-        return element;
-    }
-
-    /// Define the default variant.  This returns the `Object` for defining the variant
-    /// type, as well as a `Node` that represents the unmatched tag value which can be
-    /// used by nodes within the variant type.  If you only need to read the value,
-    /// this can be ignored.  If you need to round-trip, the value needs to be consumed
-    /// so it can be output again upon serialization.
-    pub fn default(
-        &self,
-        id: impl Into<String>,
-        variant_name: impl Into<String>,
-        obj_name: impl Into<String>,
-    ) -> (Object, Node) {
-        let id = id.into();
-        let variant_name = variant_name.into();
-        let element = Object::new(id.clone(), &self.schema, obj_name.into());
-        let dummy_id = format!("{}__tag", id);
-        let dummy_rust_type = self.enum_.0.mut_.borrow().serial_tag.as_ref().unwrap().primary.rust_type();
-        element.take_id(&dummy_id, Some(LevelIdInfo {
-            read: None,
-            write: Some(LevelIdInfoSide { type_ident: dummy_rust_type.clone() }),
-        }));
-        let dummy: Node = NodeEnumDummy(Gc::new(NodeEnumDummy_ {
-            scope: element.clone(),
-            id: dummy_id.clone(),
-            id_ident: dummy_id.ident().expect("Couldn't convert id into a rust identifier"),
-            rust_type: dummy_rust_type,
-            mut_: GcCell::new(NodeEnumDummyMut_ { rust: None }),
-        })).into();
-        let old = self.enum_.0.mut_.borrow_mut().default_variant.replace(EnumDefaultVariant {
-            var_name: variant_name.clone(),
-            var_name_ident: variant_name.ident().expect("Couldn't convert variant name into a rust identifier"),
-            tag: dummy.clone(),
-            element: element.clone(),
-        });
-        if old.is_some() {
-            panic!("Default variant already set.");
-        }
-        {
-            let mut el_mut = element.0.mut_.borrow_mut();
-            el_mut.serial_extra_roots.push(dummy.clone());
-            el_mut.escapable_parent = EscapableParent::Enum(EscapableParentEnum {
-                enum_: self.enum_.clone(),
-                variant_name: variant_name,
-                parent: self.obj.clone(),
-            });
-        }
-        return (element, dummy);
     }
 }

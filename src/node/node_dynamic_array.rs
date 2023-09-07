@@ -14,19 +14,23 @@ use crate::{
         LateInit,
     },
     node::{
-        Node,
-        NodeMethods,
-        RedirectRef,
-        ToDep,
-        Node_,
+        node::{
+            Node,
+            NodeMethods,
+            RedirectRef,
+            ToDep,
+            Node_,
+        },
+        node_int::NodeInt,
+        node_serial::NodeSerialSegment,
     },
-    node_int::NodeInt,
-    object::{
-        Object,
-    },
-    node_serial::NodeSerialSegment,
     derive_forward_node_methods,
-    schema::GenerateContext,
+    schema::{
+        GenerateContext,
+        generate_write,
+        generate_read,
+    },
+    scope::Scope,
 };
 
 #[derive(Trace, Finalize)]
@@ -37,13 +41,13 @@ pub(crate) struct NodeDynamicArrayMut_ {
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeDynamicArray_ {
-    pub(crate) scope: Object,
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
     pub(crate) serial_before: Option<Node>,
     pub(crate) serial: NodeSerialSegment,
-    pub(crate) element: Object,
+    pub(crate) element: Scope,
     pub(crate) mut_: GcCell<NodeDynamicArrayMut_>,
 }
 
@@ -59,19 +63,18 @@ impl NodeMethods for NodeDynamicArray_ {
     fn generate_read(&self, gen_ctx: &GenerateContext) -> TokenStream {
         let dest_ident = &self.id_ident;
         let source_len_ident = self.mut_.borrow().serial_len.as_ref().unwrap().primary.0.id_ident.clone();
-        let source_ident = self.serial.0.serial_root.0.id_ident.clone();
-        let elem_type_ident = self.element.0.rust_root.0.type_name_ident.clone();
-        let method;
-        if gen_ctx.async_ {
-            method = quote!(read_async);
-        } else {
-            method = quote!(read);
-        }
-        let read = gen_ctx.wrap_async(quote!(#elem_type_ident:: #method(#source_ident)));
+        let elem_code = generate_read(gen_ctx, &self.element);
+        let elem_dest_ident = self.element.get_rust_root().id_ident();
+        let outer_serial_ident = &self.scope.0.serial_root.0.id_ident;
+        let inner_serial_ident = &self.element.0.serial_root.0.id_ident;
         return quote!{
             let mut #dest_ident = vec ![];
             for _ in 0..#source_len_ident {
-                #dest_ident.push(#read ?);
+                let #inner_serial_ident =& mut * #outer_serial_ident;
+                //. .
+                #elem_code 
+                //. .
+                #dest_ident.push(#elem_dest_ident);
             }
         };
     }
@@ -86,18 +89,16 @@ impl NodeMethods for NodeDynamicArray_ {
         let dest_len_ident = len.id_ident();
         let dest_len_type = &len.rust_type;
         let dest_ident = self.serial.0.id_ident();
-        let method;
-        if gen_ctx.async_ {
-            method = quote!(write_async);
-        } else {
-            method = quote!(write);
-        }
-        let write = gen_ctx.wrap_write(quote!(e.#method(& mut #dest_ident)));
+        let elem_code = generate_write(gen_ctx, &self.element);
+        let elem_source_ident = self.element.get_rust_root().id_ident();
+        let elem_dest_ident = &self.element.0.serial_root.0.id_ident;
         return quote!{
             #dest_len_ident = #source_len_ident.len() as #dest_len_type;
             #dest_ident = vec ![];
-            for e in #source_len_ident {
-                #write;
+            for #elem_source_ident in #source_len_ident {
+                let #elem_dest_ident =& mut #dest_ident;
+                //. .
+                #elem_code
             }
         };
     }
@@ -112,7 +113,7 @@ impl NodeMethods for NodeDynamicArray_ {
         mut_.rust = Some(rust);
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         return self.scope.clone();
     }
 
@@ -125,7 +126,7 @@ impl NodeMethods for NodeDynamicArray_ {
     }
 
     fn rust_type(&self) -> TokenStream {
-        let elem_type_ident = &self.element.0.rust_root.0.type_name_ident;
+        let elem_type_ident = &self.element.0.mut_.borrow().rust_root.as_ref().unwrap().rust_type();
         return quote!(std:: vec:: Vec < #elem_type_ident >);
     }
 }

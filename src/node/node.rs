@@ -8,32 +8,32 @@ use proc_macro2::{
     Ident,
 };
 use crate::{
-    node_serial::{
-        NodeSerial,
-        NodeSerialSegment,
+    node::{
+        node_serial::{
+            NodeSerial,
+            NodeSerialSegment,
+        },
+        node_fixed_range::NodeFixedRange,
+        node_int::NodeInt,
+        node_dynamic_bytes::NodeDynamicBytes,
+        node_dynamic_array::NodeDynamicArray,
+        node_const::NodeConst,
+        node_object::{
+            NodeObjField,
+            NodeObj,
+        },
+        node_enum::{
+            NodeEnum,
+            NodeEnumDummy,
+        },
+        node_fixed_bytes::NodeFixedBytes,
+        node_delimited_bytes::NodeDelimitedBytes,
+        node_remaining_bytes::NodeRemainingBytes,
+        node_custom::NodeCustom,
+        node_align::NodeAlign,
     },
-    node_fixed_range::NodeFixedRange,
-    node_int::NodeInt,
-    node_dynamic_bytes::NodeDynamicBytes,
-    node_dynamic_array::NodeDynamicArray,
-    node_const::NodeConst,
-    node_rust::{
-        NodeRustField,
-        NodeRustObj,
-    },
-    node_enum::{
-        NodeEnum,
-        NodeEnumDummy,
-    },
-    object::{
-        Object,
-    },
-    node_fixed_bytes::NodeFixedBytes,
     schema::GenerateContext,
-    node_delimited_bytes::NodeDelimitedBytes,
-    node_remaining_bytes::NodeRemainingBytes,
-    node_custom::NodeCustom,
-    node_align::NodeAlign,
+    scope::Scope,
 };
 
 #[enum_dispatch]
@@ -43,7 +43,7 @@ pub(crate) trait NodeMethods {
     fn gather_write_deps(&self) -> Vec<Node>;
     fn generate_write(&self, gen_ctx: &GenerateContext) -> TokenStream;
     fn set_rust(&self, rust: Node);
-    fn scope(&self) -> Object;
+    fn scope(&self) -> Scope;
     fn id(&self) -> String;
     fn id_ident(&self) -> Ident;
     fn rust_type(&self) -> TokenStream;
@@ -73,7 +73,7 @@ macro_rules! derive_forward_node_methods{
                 return self.0.set_rust(rust);
             }
 
-            fn scope(&self) -> Object {
+            fn scope(&self) -> Scope {
                 return self.0.scope();
             }
 
@@ -109,8 +109,8 @@ pub(crate) enum Node_ {
     EnumDummy(NodeEnumDummy),
     Const(NodeConst),
     Custom(NodeCustom),
-    RustField(NodeRustField),
-    RustObj(NodeRustObj),
+    ObjField(NodeObjField),
+    Obj(NodeObj),
 }
 
 impl NodeMethods for Node_ {
@@ -131,8 +131,8 @@ impl NodeMethods for Node_ {
             Node_::EnumDummy(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Const(inner) => NodeMethods::gather_read_deps(inner),
             Node_::Custom(inner) => NodeMethods::gather_read_deps(inner),
-            Node_::RustField(inner) => NodeMethods::gather_read_deps(inner),
-            Node_::RustObj(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::ObjField(inner) => NodeMethods::gather_read_deps(inner),
+            Node_::Obj(inner) => NodeMethods::gather_read_deps(inner),
         }
     }
 
@@ -181,10 +181,10 @@ impl NodeMethods for Node_ {
             Node_::Custom(inner) => {
                 NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
             },
-            Node_::RustField(inner) => {
+            Node_::ObjField(inner) => {
                 NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
             },
-            Node_::RustObj(inner) => {
+            Node_::Obj(inner) => {
                 NodeMethods::generate_read(inner, __enum_dispatch_arg_0)
             },
         }
@@ -207,8 +207,8 @@ impl NodeMethods for Node_ {
             Node_::EnumDummy(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Const(inner) => NodeMethods::gather_write_deps(inner),
             Node_::Custom(inner) => NodeMethods::gather_write_deps(inner),
-            Node_::RustField(inner) => NodeMethods::gather_write_deps(inner),
-            Node_::RustObj(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::ObjField(inner) => NodeMethods::gather_write_deps(inner),
+            Node_::Obj(inner) => NodeMethods::gather_write_deps(inner),
         }
     }
 
@@ -257,10 +257,10 @@ impl NodeMethods for Node_ {
             Node_::Custom(inner) => {
                 NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
             },
-            Node_::RustField(inner) => {
+            Node_::ObjField(inner) => {
                 NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
             },
-            Node_::RustObj(inner) => {
+            Node_::Obj(inner) => {
                 NodeMethods::generate_write(inner, __enum_dispatch_arg_0)
             },
         }
@@ -305,17 +305,17 @@ impl NodeMethods for Node_ {
             Node_::Custom(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
-            Node_::RustField(inner) => {
+            Node_::ObjField(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
-            Node_::RustObj(inner) => {
+            Node_::Obj(inner) => {
                 NodeMethods::set_rust(inner, __enum_dispatch_arg_0)
             },
         }
     }
 
     #[inline]
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         match self {
             Node_::Serial(inner) => NodeMethods::scope(inner),
             Node_::SerialSegment(inner) => NodeMethods::scope(inner),
@@ -331,8 +331,8 @@ impl NodeMethods for Node_ {
             Node_::EnumDummy(inner) => NodeMethods::scope(inner),
             Node_::Const(inner) => NodeMethods::scope(inner),
             Node_::Custom(inner) => NodeMethods::scope(inner),
-            Node_::RustField(inner) => NodeMethods::scope(inner),
-            Node_::RustObj(inner) => NodeMethods::scope(inner),
+            Node_::ObjField(inner) => NodeMethods::scope(inner),
+            Node_::Obj(inner) => NodeMethods::scope(inner),
         }
     }
 
@@ -353,8 +353,8 @@ impl NodeMethods for Node_ {
             Node_::EnumDummy(inner) => NodeMethods::id(inner),
             Node_::Const(inner) => NodeMethods::id(inner),
             Node_::Custom(inner) => NodeMethods::id(inner),
-            Node_::RustField(inner) => NodeMethods::id(inner),
-            Node_::RustObj(inner) => NodeMethods::id(inner),
+            Node_::ObjField(inner) => NodeMethods::id(inner),
+            Node_::Obj(inner) => NodeMethods::id(inner),
         }
     }
 
@@ -375,8 +375,8 @@ impl NodeMethods for Node_ {
             Node_::EnumDummy(inner) => NodeMethods::id_ident(inner),
             Node_::Const(inner) => NodeMethods::id_ident(inner),
             Node_::Custom(inner) => NodeMethods::id_ident(inner),
-            Node_::RustField(inner) => NodeMethods::id_ident(inner),
-            Node_::RustObj(inner) => NodeMethods::id_ident(inner),
+            Node_::ObjField(inner) => NodeMethods::id_ident(inner),
+            Node_::Obj(inner) => NodeMethods::id_ident(inner),
         }
     }
 
@@ -397,8 +397,8 @@ impl NodeMethods for Node_ {
             Node_::EnumDummy(inner) => NodeMethods::rust_type(inner),
             Node_::Const(inner) => NodeMethods::rust_type(inner),
             Node_::Custom(inner) => NodeMethods::rust_type(inner),
-            Node_::RustField(inner) => NodeMethods::rust_type(inner),
-            Node_::RustObj(inner) => NodeMethods::rust_type(inner),
+            Node_::ObjField(inner) => NodeMethods::rust_type(inner),
+            Node_::Obj(inner) => NodeMethods::rust_type(inner),
         }
     }
 }
@@ -427,7 +427,7 @@ impl NodeMethods for Node {
         return self.0.set_rust(rust);
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         return self.0.scope();
     }
 

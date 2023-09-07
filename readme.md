@@ -1,4 +1,6 @@
-This is a graph-based binary format serializer/deserializer generator for use in `build.rs`, for interfacing with existing, externally developed binary format specifications. If you want to automatically serialize/deserialize your own data, use Protobuf or Bincode or something similar instead of this.
+This is a graph-based binary format serializer/deserializer generator for use in `build.rs`!
+
+This is for interfacing with existing, externally developed binary format specifications. If you want to automatically serialize/deserialize your own data, use Protobuf or Bincode or something similar instead of this.
 
 By avoiding a struct macro based interface I think this is more flexible and simpler to use than alternatives.
 
@@ -12,7 +14,7 @@ Goals
 
 2. Easy to understand, composable elements
 
-   The API is simple and flexible by chaining reversible processing steps with well encapsulated nodes.
+   The API is simple and flexible by constructing a graph of reversible processing nodes.
 
 3. Precision
 
@@ -32,7 +34,7 @@ Non-goals
 
 - Extreme optimization
 
-  This is rust, and I don't do crazy things, so it won't be slow. But I'm not going to compromise on the goals to increase speed.
+  This is rust, and I don't do crazy things, so it won't be slow. But optimization is lower priority than the above.
 
 # Features
 
@@ -70,26 +72,32 @@ use std::{
    path::PathBuf,
    env,
    str::FromStr,
-   fs,
+   fs::{
+      self,
+   },
 };
-use inarybay::object::Endian;
+use inarybay::scope::Endian;
 use quote::quote;
 
 pub fn main() {
    println!("cargo:rerun-if-changed=build.rs");
    let root = PathBuf::from_str(&env::var("CARGO_MANIFEST_DIR").unwrap()).unwrap();
    let schema = inarybay::schema::Schema::new();
-   let object = schema.object("root", "Versioned");
-   object.add_type_attrs(quote!(#[derive(Debug, PartialEq)]));
-   object.rust_field(
-      "version",
-      object.int("version_int", object.fixed_range("version_bytes", 2), Endian::Big, false),
-   );
-   object.rust_field("data", object.remaining_bytes("data_bytes"));
+   {
+      let scope = schema.scope("versioned");
+      let version = scope.int("version_int", scope.fixed_range("version_bytes", 2), Endian::Big, false);
+      let body = scope.remaining_bytes("data_bytes");
+      {
+            let object = scope.object("obj", "Versioned");
+            object.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
+            object.field("version", version);
+            object.field("body", body);
+            scope.rust_root(object);
+      }
+   }
    fs::write(root.join("src/versioned.rs"), schema.generate(inarybay::schema::GenerateConfig {
       read: true,
       write: true,
-      sync: true,
       ..Default::default()
    }).as_bytes()).unwrap();
 }
@@ -101,13 +109,13 @@ Then use it like:
 
 ```rust
 use std::fs::File;
-use crate::versioned::Versioned;
+use crate::versioned::versioned_read;
 
 pub fn main() {
    let mut f = File::open("x.jpg.ver").unwrap();
-   let v = Versioned::read(&mut f).unwrap();
+   let v = versioned_read(&mut f).unwrap();
    println!("x.jpg.ver is {}", v.version);
-   println!("x.jpg.ver length is {}", v.data.len());
+   println!("x.jpg.ver length is {}", v.body.len());
 }
 ```
 
@@ -140,45 +148,15 @@ The latter has a few helper types and republished dependencies.
 
 Some of the descriptions here are deserialization-oriented, but everything is naturally bidirectional, it's just easier to describe with a reference direction.
 
-1. Create a schema `s`
-2. Create a root object `o` (or more than one)
-3. Define serial segment nodes
-
-   These describe the serial-side of the data - which chunks of bytes there are, how long they are, etc. They interact directly with the stream.
-
-   The basic serial-side nodes are:
-
-   - **`o.fixed_range`**, **`o.subrange`** - describes a fixed range of bytes or bits
-   - **`o.dynamic_bytes`** - a range of bytes, the length of which is specified by an integer node
-   - **`o.remaining_bytes`** - a range of bytes to the end of the file
-   - **`o.delimited_bytes`** - a range of bytes terminated by a magic string of bytes (could be just a null byte)
-   - **`o.dynamic_array`**, **`o.enum`** - these read a dynamic range based on more complex rules
-   - **`o.align`** - this reads and discards data to a specified alignment. I.e. if 3 bytes had been read from the start of the file and the alignment is 4 bytes, this node will read one byte so the next serial segment is aligned. This works with both fixed and dynamic offsets.
-
-4. Define transformation nodes
-
-   These take the serial data and transform it, like converting a run of bytes into a string.
-
-   These nodes are:
-
-   - **`o.int`**, **`o.bool`**, **`o.float`** - take a fixed range of bytes and produce an integer/bool/float value
-   - **`o.bytes`** - this is a bit special. Fixed ranges/subranges don't have a well defined rust type. This turns the range into a sized Rust `u8` array.
-   - **`o.string_utf8`** - takes a dynamic range of bytes and parse it as a utf8 string
-   - **`o.custom`** - inject custom transformation code. As arguments, it takes the rust-side type name, and two functions to output code for consuming the serial-side sources and producing the rust object and vice-versa. The final argument, a list of nodes, are the serial-side nodes that will be the _source_ argument to the deserialization closure and the _destination_ argument to the serialization closure. `bool` and `string_utf8` are built on this.
-
-5. Define rust nodes
-
-   There's two of these
-
-   - **`o.rust_field`** - takes a value and uses it as a field in the output object
-   - **`o.rust_const`** - the value isn't available to the caller, but instead confirms that it matches an expected constant/magic value
-
-6. Generate the code with `s.generate` on the schema
-
-   This will produce files, ready to be used by your project.
+1. Create a schema `let schema = Schema::new()`
+2. Create a root scope `let scope = schema.scope(...)`
+3. Define nodes on `scope` like `scope.fixed_range`, `scope.int`, etc., connecting them as you go
+4. Define rust root using `scope.rust_root`
+5. Generate the code with `schema.generate` and write it to the file you want
 
 ## A note on arguments
 
+- **`Node`** - all `Node*` types have an `.into()` which will convert them to `Node`. `Node` is basically a big enum of all the node types.
 - **`id`** - these are used for variable names in the generated de/serialize code, as well as uniquely identifying nodes for error messages and loop-identification during graph traversal
 - **`TokenStream`** - if an argument has this type, it means it wants some code that will be injected into the generated code. You can generate it with `quote!()` or `quote!{}` (equivalent, use whichever bracket you prefer) from the [quote](https://github.com/dtolnay/quote) crate. The code could be something as simple as a type (like `quote!(my::special::Type)`), an expression (`quote!(#source * 33)`), or multiple statements, depending on what the function requires.
 
@@ -202,26 +180,33 @@ Some of the descriptions here are deserialization-oriented, but everything is na
 
 De/serialization is done as a dependency graph traversal - all dependencies are walked before any dependents.
 
-For serialization, the root of the graph is the serial side - it pulls in each segment, which pulls in individual data serializations from fields. Later segments depend on earlier segments, so the earlier segments get written first.
+For serialization, the root of the graph is the file/socket/whatever - it depends on each serial segment, which depends on individual data serializations from fields. Later segments depend on earlier segments, so the earlier segments get written first.
 
-For deserialization, the root of the graph is the rust object - it pulls in each field, which depends on data transformations, which depends on segments being read. Again, like for serialization, each segment depends on the previous segment so that segment is read before the next.
+For deserialization, the root of the graph is the root rust type, like a rust struct - the root depends on each field to be read, which depends on data transformations, which depend on segments being read. Again, like for serialization, each serial segment depends on the previous segment so that segment is read before the next.
 
 ## Nesting
 
 Nested objects, like arrays and enums, are treated as single nodes with their own graphs internally. I feel like it should be possible to unify this in a single graph but I haven't come up with a way to do it yet.
 
-### Enums
+## Writing and memory use
 
-For enums alone, already-read data outside the enum (from a higher scope) can be interpreted differently in different variants. In MQTT for instance, the remaining bitfields from the main packet enum tag bytes are used by some variants and are expected to have magic numbers or be all zero in others.
+Right now, each node allocates memory for its output when writing. I would like to write directly to the output stream without allocating extra buffers, but at the moment that would make the following scenario difficult. Consider the graph:
 
-If the external serial node was linked to the node within the nested enum variant grpah 1. the serial field could have multiple dependencies, one per variant and 2. the discriminated field of the variant is only accessible within the context of the `match` which starts and ends during the processing of the enum node itself.
+- Serial enum tag
+- Serial `X`
+- Serial `Y`
+- Serial enum
+  - Variant
+    - Serial integer `Z`
+    - Custom node, uses `Z` and `X`
 
-To handle this, links crossing scope boundaries are split. The external node is linked to the containing enum node, and the field in the variant is linked to the serial root of the subgraph. This solves ordering issues and avoids conditional graph links that aren't known at generation time.
+The custom node does some complex processing during transformation.
 
-## Dynamic elements
+During serialization, the variant node produces three outputs: the enum tag, the enum, and `X`. `Y` needs to be written between `X` and the enum, so there are two options:
 
-There are several dynamic elements, like arrays, dynamic bytes, enums, etc. which have a tag or length segment and a separate body segment. These segments may be separated by other segments, or even occur at a higher scope.
+1. Serialize to variables, then write the variables in order
+2. Descend into the enum multiple times
 
-Since these elements are represented by a single graph node, during serialization both segments must be serialized at the same time. However if another element comes in between, then they can't be serialized as a unit. To work around this, these nodes serialize to memory, then the memory chunks are written to the stream on the serial-side (outside of the node), properly interleaved. For things like enums, this means that there's only one `match` block, rather than needing to inspect the enum twice.
+2 would allow direct writing to the stream with no temporary buffers, but both `X` and `Z` depend on the custom node, so each descent would need to redo the custom node's transformations, or else somehow per-variant temporary values would need to be stored between descents into the enum.
 
-An alternative would be to represent these as multiple nodes so the data can be interleaved while writing to the stream directly. For an enum, it means when writing the tag there would be a `match`, and another `match` while writing the body later. The complication with this approach is the handling of cross-scope dependencies (mentioned above) - if each external dep could be ordered independently, each one could require a `match` (and if multiple-levels are traversed multiple nested `match` blocks). These are rare (I think?) though and it would remove the need for a separate "segment" layer of nodes.
+It may be possible to do that, but it would be significantly more complicated and I don't think the memory use is excessive at the moment.

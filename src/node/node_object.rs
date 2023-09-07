@@ -8,41 +8,53 @@ use proc_macro2::{
     TokenStream,
     Ident,
 };
-use quote::quote;
+use quote::{
+    quote,
+    ToTokens,
+};
 use crate::{
     node::{
-        Node,
-        RedirectRef,
-        NodeMethods,
-        ToDep,
+        node::{
+            Node,
+            RedirectRef,
+            NodeMethods,
+            ToDep,
+        },
     },
     util::{
         LateInit,
+        ToIdent,
     },
-    object::Object,
     derive_forward_node_methods,
-    schema::GenerateContext,
+    schema::{
+        GenerateContext,
+    },
+    scope::{
+        Scope,
+    },
 };
 
+use super::node::Node_;
+
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeRustFieldMut_ {
+pub(crate) struct NodeObjFieldMut_ {
     pub(crate) serial: LateInit<RedirectRef<Node, Node>>,
 }
 
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeRustField_ {
-    pub(crate) scope: Object,
+pub(crate) struct NodeObjField_ {
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
     pub(crate) field_name: String,
     #[unsafe_ignore_trace]
     pub(crate) field_name_ident: Ident,
-    pub(crate) obj: NodeRustObj,
-    pub(crate) mut_: GcCell<NodeRustFieldMut_>,
+    pub(crate) obj: NodeObj,
+    pub(crate) mut_: GcCell<NodeObjFieldMut_>,
 }
 
-impl NodeMethods for NodeRustField_ {
+impl NodeMethods for NodeObjField_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         return self.mut_.borrow().serial.dep();
     }
@@ -68,7 +80,7 @@ impl NodeMethods for NodeRustField_ {
         unreachable!();
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         return self.scope.clone();
     }
 
@@ -86,33 +98,36 @@ impl NodeMethods for NodeRustField_ {
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub(crate) struct NodeRustField(pub(crate) Gc<NodeRustField_>);
+pub(crate) struct NodeObjField(pub(crate) Gc<NodeObjField_>);
 
-impl Into<Node> for NodeRustField {
+impl Into<Node> for NodeObjField {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::RustField(self));
+        return Node(Node_::ObjField(self));
     }
 }
 
-derive_forward_node_methods!(NodeRustField);
+derive_forward_node_methods!(NodeObjField);
 
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeRustObjMut_ {
-    pub(crate) fields: Vec<NodeRustField>,
+pub(crate) struct NodeObjMut_ {
+    pub(crate) fields: Vec<NodeObjField>,
+    #[unsafe_ignore_trace]
+    pub(crate) type_attrs: Vec<TokenStream>,
 }
 
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeRustObj_ {
+pub(crate) struct NodeObj_ {
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
     pub(crate) type_name: String,
     #[unsafe_ignore_trace]
     pub(crate) type_name_ident: Ident,
-    pub(crate) mut_: GcCell<NodeRustObjMut_>,
+    pub(crate) mut_: GcCell<NodeObjMut_>,
 }
 
-impl NodeMethods for NodeRustObj_ {
+impl NodeMethods for NodeObj_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         return self.mut_.borrow().fields.dep();
     }
@@ -147,7 +162,7 @@ impl NodeMethods for NodeRustObj_ {
         unreachable!();
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         unreachable!();
     }
 
@@ -160,17 +175,54 @@ impl NodeMethods for NodeRustObj_ {
     }
 
     fn rust_type(&self) -> TokenStream {
-        unreachable!();
+        return self.type_name_ident.to_token_stream();
     }
 }
 
+/// This represents a rust struct.  Add fields with `field`.
 #[derive(Clone, Trace, Finalize)]
-pub(crate) struct NodeRustObj(pub(crate) Gc<NodeRustObj_>);
+pub struct NodeObj(pub(crate) Gc<NodeObj_>);
 
-impl Into<Node> for NodeRustObj {
-    fn into(self) -> Node {
-        return Node(crate::node::Node_::RustObj(self));
+impl NodeObj {
+    /// Add a structure prefix line like `#[...]` to the object definition.  Call like
+    /// `o.add_type_attrs(quote!(#[derive(x,y,z)]))`.
+    pub fn add_type_attrs(&self, attrs: TokenStream) {
+        self.0.mut_.borrow_mut().type_attrs.push(attrs);
+    }
+
+    /// Store the read `serial` value in the object with the given `name`.  The type
+    /// will match whatever type `serial` is.
+    pub fn field(&self, name: impl Into<String>, serial: impl Into<Node>) {
+        let name = name.into();
+        let id = name.clone();
+        self.0.scope.take_id(&id, None);
+        let serial = serial.into();
+        let rust = NodeObjField(Gc::new(NodeObjField_ {
+            scope: self.0.scope.clone(),
+            id: id.clone(),
+            id_ident: id.ident().expect("Couldn't convert id into a rust identifier"),
+            field_name: name.clone(),
+            field_name_ident: name.ident().expect("Couldn't convert field name into a rust identifier"),
+            obj: self.clone(),
+            mut_: GcCell::new(NodeObjFieldMut_ { serial: None }),
+        }));
+        self.0.mut_.borrow_mut().fields.push(rust.clone());
+        self
+            .0
+            .scope
+            .lift_connect(
+                &self.0.scope.get_ancestry_to(&serial),
+                &serial,
+                rust.clone().into(),
+                &mut rust.0.mut_.borrow_mut().serial,
+            );
     }
 }
 
-derive_forward_node_methods!(NodeRustObj);
+impl Into<Node> for NodeObj {
+    fn into(self) -> Node {
+        return Node(Node_::Obj(self));
+    }
+}
+
+derive_forward_node_methods!(NodeObj);

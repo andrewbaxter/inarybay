@@ -8,55 +8,63 @@ use proc_macro2::{
     TokenStream,
     Ident,
 };
-use quote::ToTokens;
 use crate::{
     util::{
         LateInit,
     },
     node::{
-        Node,
-        RedirectRef,
-        NodeMethods,
-        ToDep,
+        node_fixed_range::NodeFixedRange,
+        node::{
+            Node,
+            RedirectRef,
+            NodeMethods,
+            ToDep,
+        },
     },
-    object::Object,
     derive_forward_node_methods,
     schema::GenerateContext,
+    scope::{
+        Scope,
+    },
+};
+use quote::{
+    quote,
 };
 
+use super::node::Node_;
+
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeCustomMut_ {
-    pub(crate) serial: Vec<LateInit<RedirectRef<Node, Node>>>,
+pub(crate) struct NodeFixedBytesMut_ {
+    pub(crate) serial: LateInit<RedirectRef<NodeFixedRange, Node>>,
     pub(crate) rust: Option<Node>,
 }
 
 #[derive(Trace, Finalize)]
-pub(crate) struct NodeCustom_ {
-    pub(crate) scope: Object,
+pub(crate) struct NodeFixedBytes_ {
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
+    pub(crate) start: usize,
+    pub(crate) len: usize,
     #[unsafe_ignore_trace]
     pub(crate) rust_type: TokenStream,
-    #[unsafe_ignore_trace]
-    pub(crate) read_code: Box<dyn Fn(&Vec<Ident>, &TokenStream) -> TokenStream>,
-    #[unsafe_ignore_trace]
-    pub(crate) write_code: Box<dyn Fn(&TokenStream, &Vec<Ident>) -> TokenStream>,
-    pub(crate) mut_: GcCell<NodeCustomMut_>,
+    pub(crate) mut_: GcCell<NodeFixedBytesMut_>,
 }
 
-impl NodeMethods for NodeCustom_ {
+impl NodeMethods for NodeFixedBytes_ {
     fn gather_read_deps(&self) -> Vec<Node> {
         return self.mut_.borrow().serial.dep();
     }
 
     fn generate_read(&self, _gen_ctx: &GenerateContext) -> TokenStream {
         let dest_ident = &self.id_ident;
-        let mut source_idents = vec![];
-        for serial in &self.mut_.borrow().serial {
-            source_idents.push(serial.as_ref().unwrap().primary.id_ident());
-        }
-        return (self.read_code)(&source_idents, &dest_ident.into_token_stream());
+        let source_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id_ident();
+        let serial_start = self.start;
+        let serial_len = self.len;
+        return quote!{
+            #dest_ident = #source_ident[#serial_start..#serial_start + #serial_len].try_into().unwrap();
+        };
     }
 
     fn gather_write_deps(&self) -> Vec<Node> {
@@ -64,11 +72,13 @@ impl NodeMethods for NodeCustom_ {
     }
 
     fn generate_write(&self, _gen_ctx: &GenerateContext) -> TokenStream {
-        let mut dest_idents = vec![];
-        for serial in &self.mut_.borrow().serial {
-            dest_idents.push(serial.as_ref().unwrap().primary.id_ident());
-        }
-        return (self.write_code)(&self.id_ident.clone().into_token_stream(), &dest_idents);
+        let source_ident = &self.id_ident;
+        let dest_ident = self.mut_.borrow().serial.as_ref().unwrap().primary.0.id_ident();
+        let serial_start = self.start;
+        let serial_bytes = self.len;
+        return quote!{
+            #dest_ident[#serial_start..#serial_start + #serial_bytes].copy_from_slice(& #source_ident);
+        };
     }
 
     fn set_rust(&self, rust: Node) {
@@ -81,7 +91,7 @@ impl NodeMethods for NodeCustom_ {
         mut_.rust = Some(rust);
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         return self.scope.clone();
     }
 
@@ -99,12 +109,12 @@ impl NodeMethods for NodeCustom_ {
 }
 
 #[derive(Clone, Trace, Finalize)]
-pub struct NodeCustom(pub(crate) Gc<NodeCustom_>);
+pub struct NodeFixedBytes(pub(crate) Gc<NodeFixedBytes_>);
 
-impl Into<Node> for NodeCustom {
+impl Into<Node> for NodeFixedBytes {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::Custom(self));
+        return Node(Node_::FixedBytes(self));
     }
 }
 
-derive_forward_node_methods!(NodeCustom);
+derive_forward_node_methods!(NodeFixedBytes);

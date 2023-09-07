@@ -13,24 +13,28 @@ use crate::{
         BVec,
         LateInit,
     },
-    node_fixed_range::NodeFixedRange,
     node::{
-        Node,
-        RedirectRef,
-        NodeMethods,
-        ToDep,
-    },
-    object::{
-        Object,
-        Endian,
+        node_fixed_range::NodeFixedRange,
+        node::{
+            Node,
+            RedirectRef,
+            NodeMethods,
+            ToDep,
+        },
     },
     derive_forward_node_methods,
     schema::GenerateContext,
+    scope::{
+        Scope,
+        Endian,
+    },
 };
 use quote::{
     quote,
     format_ident,
 };
+
+use super::node::Node_;
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeIntMut_ {
@@ -40,7 +44,7 @@ pub(crate) struct NodeIntMut_ {
 
 #[derive(Trace, Finalize)]
 pub(crate) struct NodeInt_ {
-    pub(crate) scope: Object,
+    pub(crate) scope: Scope,
     pub(crate) id: String,
     #[unsafe_ignore_trace]
     pub(crate) id_ident: Ident,
@@ -217,7 +221,7 @@ impl NodeMethods for NodeInt_ {
         mut_.rust = Some(rust);
     }
 
-    fn scope(&self) -> Object {
+    fn scope(&self) -> Scope {
         return self.scope.clone();
     }
 
@@ -239,7 +243,7 @@ pub struct NodeInt(pub(crate) Gc<NodeInt_>);
 
 impl Into<Node> for NodeInt {
     fn into(self) -> Node {
-        return Node(crate::node::Node_::Int(self));
+        return Node(Node_::Int(self));
     }
 }
 
