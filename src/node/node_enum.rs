@@ -329,7 +329,7 @@ impl NodeEnum {
     pub fn variant(&self, id: impl Into<String>, variant_name: impl Into<String>, tag: TokenStream) -> Scope {
         let id = id.into();
         let variant_name = variant_name.into();
-        let element = Scope::new(id, &self.0.scope.0.schema);
+        let element = Scope::new(id, &self.0.scope.0.schema, None);
         self.0.mut_.borrow_mut().variants.push(EnumVariant {
             var_name: variant_name.clone(),
             var_name_ident: variant_name.ident().expect("Couldn't convert variant name into a rust identifier"),
@@ -352,7 +352,7 @@ impl NodeEnum {
     pub fn default(&self, id: impl Into<String>, variant_name: impl Into<String>) -> (Scope, Node) {
         let id = id.into();
         let variant_name = variant_name.into();
-        let element = Scope::new(id.clone(), &self.0.scope.0.schema);
+        let element = Scope::new(id.clone(), &self.0.scope.0.schema, None);
         let dummy_id = format!("{}__tag", id);
         let dummy_rust_type = self.0.mut_.borrow().serial_tag.as_ref().unwrap().primary.rust_type();
         let dummy: Node = NodeEnumDummy(Gc::new(NodeEnumDummy_ {

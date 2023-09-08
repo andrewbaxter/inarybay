@@ -84,22 +84,22 @@ pub fn main() {
    let root = PathBuf::from_str(&env::var("CARGO_MANIFEST_DIR").unwrap()).unwrap();
    let schema = inarybay::schema::Schema::new();
    {
-      let scope = schema.scope("versioned");
+      let scope = schema.scope("scope", inarybay::schema::GenerateConfig {
+            read: true,
+            write: true,
+            ..Default::default()
+      });
       let version = scope.int("version_int", scope.fixed_range("version_bytes", 2), Endian::Big, false);
       let body = scope.remaining_bytes("data_bytes");
+      let object = scope.object("obj", "Versioned");
       {
-            let object = scope.object("obj", "Versioned");
             object.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
             object.field("version", version);
             object.field("body", body);
-            scope.rust_root(object);
       }
+      scope.rust_root(object);
    }
-   fs::write(root.join("src/versioned.rs"), schema.generate(inarybay::schema::GenerateConfig {
-      read: true,
-      write: true,
-      ..Default::default()
-   }).as_bytes()).unwrap();
+   fs::write(root.join("src/versioned.rs"), schema.generate().as_bytes()).unwrap();
 }
 ```
 

@@ -29,7 +29,7 @@ macro_rules! round_trip{
         #[test] fn $test() {
             let start = $e;
             let mut bytes = vec![];
-            $mod:: write(start.clone(), &mut bytes).unwrap();
+            $mod:: write(&mut bytes, start.clone()).unwrap();
             let mid = $mid;
             if mid.len() > 0 {
                 assert_eq!(bytes, mid, "Written data doesn't quite match the expected serialized bytes");
@@ -40,7 +40,7 @@ macro_rules! round_trip{
         #[tokio::test] async fn $asynctest() {
             let start = $e;
             let mut bytes = vec![];
-            $mod:: write_async(start.clone(), &mut bytes).await.unwrap();
+            $mod:: write_async(&mut bytes, start.clone()).await.unwrap();
             let mid = $mid;
             if mid.len() > 0 {
                 assert_eq!(bytes, mid);

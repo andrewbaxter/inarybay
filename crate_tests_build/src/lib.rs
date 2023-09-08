@@ -5,7 +5,10 @@ use std::{
     },
 };
 use inarybay::{
-    schema::Schema,
+    schema::{
+        Schema,
+        GenerateConfig,
+    },
     scope::Endian,
 };
 use quote::quote;
@@ -29,22 +32,22 @@ mod example {
         let root = PathBuf::from_str(&env::var("CARGO_MANIFEST_DIR").unwrap()).unwrap();
         let schema = inarybay::schema::Schema::new();
         {
-            let scope = schema.scope("scope", "");
+            let scope = schema.scope("scope", inarybay::schema::GenerateConfig {
+                read: true,
+                write: true,
+                ..Default::default()
+            });
             let version = scope.int("version_int", scope.fixed_range("version_bytes", 2), Endian::Big, false);
             let body = scope.remaining_bytes("data_bytes");
+            let object = scope.object("obj", "Versioned");
             {
-                let object = scope.object("obj", "Versioned");
                 object.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
                 object.field("version", version);
                 object.field("body", body);
-                scope.rust_root(object);
             }
+            scope.rust_root(object);
         }
-        fs::write(root.join("src/versioned.rs"), schema.generate(inarybay::schema::GenerateConfig {
-            read: true,
-            write: true,
-            ..Default::default()
-        }).as_bytes()).unwrap();
+        fs::write(root.join("src/versioned.rs"), schema.generate().as_bytes()).unwrap();
     }
 }
 
@@ -52,19 +55,21 @@ pub fn generate(root: PathBuf) {
     let src = root.join("src");
     let write = |name: &str, s: Schema| {
         let out_path = src.join(format!("gen_{}.rs", name));
-        fs::write(out_path, s.generate(inarybay::schema::GenerateConfig {
-            read: true,
-            write: true,
-            sync_: true,
-            async_: true,
-            low_heap: false,
-        }).as_bytes()).unwrap();
+        fs::write(out_path, s.generate().as_bytes()).unwrap();
+    };
+    let config = GenerateConfig {
+        prefix: None,
+        read: true,
+        write: true,
+        sync_: true,
+        async_: true,
+        simple_errors: false,
     };
 
     // Fixed bytes
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -75,7 +80,7 @@ pub fn generate(root: PathBuf) {
     // Single byte int
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -86,7 +91,7 @@ pub fn generate(root: PathBuf) {
     // Signed single-byte int
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -97,7 +102,7 @@ pub fn generate(root: PathBuf) {
     // Standard multi-byte int, LE
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -108,7 +113,7 @@ pub fn generate(root: PathBuf) {
     // Standard multi-byte int, BE
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -119,7 +124,7 @@ pub fn generate(root: PathBuf) {
     // Standard multi-byte int, LE
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -130,7 +135,7 @@ pub fn generate(root: PathBuf) {
     // Standard multi-byte int, BE
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -141,7 +146,7 @@ pub fn generate(root: PathBuf) {
     // Bitfields, single int
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let bitfield = scope.fixed_range("range0", 1);
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
@@ -153,7 +158,7 @@ pub fn generate(root: PathBuf) {
     // Bitfields, multiple ints
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let bitfield = scope.fixed_range("range0", 1);
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
@@ -166,7 +171,7 @@ pub fn generate(root: PathBuf) {
     // Const int
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         scope.const_(
             "range0_magic",
             scope.int("range0_int", scope.fixed_range("range0", 4), Endian::Little, true),
@@ -181,7 +186,7 @@ pub fn generate(root: PathBuf) {
     // Bool
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -195,7 +200,7 @@ pub fn generate(root: PathBuf) {
     // Float
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -206,7 +211,7 @@ pub fn generate(root: PathBuf) {
     // Alignment
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -219,7 +224,7 @@ pub fn generate(root: PathBuf) {
     // Alignment with shift
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -232,7 +237,7 @@ pub fn generate(root: PathBuf) {
     // Delimited bytes
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -244,7 +249,7 @@ pub fn generate(root: PathBuf) {
     // Dynamic bytes
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let len = scope.int("f_len", scope.fixed_range("range0", 1), Endian::Little, false);
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
@@ -256,7 +261,7 @@ pub fn generate(root: PathBuf) {
     // Remaining bytes
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -268,7 +273,7 @@ pub fn generate(root: PathBuf) {
     // Dynamic array
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));
@@ -287,7 +292,7 @@ pub fn generate(root: PathBuf) {
     // Enum
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let tag = scope.int("august_tag", scope.fixed_range("range0", 1), Endian::Little, false);
         let enum_ = {
             let enum_ = scope.enum_("august_val", tag, "August");
@@ -318,7 +323,7 @@ pub fn generate(root: PathBuf) {
     // Enum default variant
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let tag = scope.int("august_tag", scope.fixed_range("range0", 1), Endian::Little, false);
         let enum_ = {
             let enum_ = scope.enum_("august_val", tag, "August");
@@ -349,7 +354,7 @@ pub fn generate(root: PathBuf) {
     // Enum with external deps
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let tag = scope.int("august_tag", scope.fixed_range("range0", 1), Endian::Little, false);
         let external = scope.fixed_range("shared0", 1);
         let enum_ = {
@@ -381,7 +386,7 @@ pub fn generate(root: PathBuf) {
     // String
     {
         let schema = inarybay::schema::Schema::new();
-        let scope = schema.scope("root", "");
+        let scope = schema.scope("root", config.clone());
         let obj = scope.object("obj", "T1");
         scope.rust_root(obj.clone());
         obj.add_type_attrs(quote!(#[derive(Clone, Debug, PartialEq)]));

@@ -108,6 +108,7 @@ use crate::{
     schema::{
         ReaderBounds,
         Schema,
+        GenerateConfig,
     },
 };
 
@@ -117,23 +118,23 @@ pub enum Endian {
     Little,
 }
 
-pub trait IntoByteVec {
+pub trait BecomesByteVec {
     fn get(&self) -> Node;
 }
 
-impl IntoByteVec for NodeDynamicBytes {
+impl BecomesByteVec for NodeDynamicBytes {
     fn get(&self) -> Node {
         return self.clone().into();
     }
 }
 
-impl IntoByteVec for NodeDelimitedBytes {
+impl BecomesByteVec for NodeDelimitedBytes {
     fn get(&self) -> Node {
         return self.clone().into();
     }
 }
 
-impl IntoByteVec for NodeRemainingBytes {
+impl BecomesByteVec for NodeRemainingBytes {
     fn get(&self) -> Node {
         return self.clone().into();
     }
@@ -191,6 +192,8 @@ pub struct Range(Gc<GcCell<Range_>>);
 
 #[derive(Trace, Finalize)]
 pub(crate) struct ScopeMut_ {
+    #[unsafe_ignore_trace]
+    pub(crate) generate_config: Option<GenerateConfig>,
     pub(crate) rust_root: Option<Node>,
     pub(crate) escapable_parent: EscapableParent,
     pub(crate) rust_extra_roots: Vec<NodeConst>,
@@ -209,7 +212,7 @@ pub(crate) struct Scope_ {
 }
 
 /// During (de)serialization there is a tree-based accessibility of certain values.
-///  For example, when serializing a Vec, each element is only in scope during that
+/// For example, when serializing a Vec, each element is only in scope during that
 /// iteration of the loop, so any nodes depending on it must be evaluated within
 /// that loop iteration.
 ///
@@ -218,7 +221,7 @@ pub(crate) struct Scope_ {
 /// processing within the loop.
 ///
 /// `Scope` has methods for creating nodes that will be evaulated within the scope.
-///  In some nesting contexts (enum, object, _not_ array) nodes in an inner scope
+/// In some nesting contexts (enum, object, _not_ array) nodes in an inner scope
 /// can refer to nodes in an outer scope.
 ///
 /// The `Scope` also has a defined serial-side and rust-side root which are
@@ -230,7 +233,7 @@ pub struct Scope(pub(crate) Gc<Scope_>);
 
 impl Scope {
     // # Object creation + setup
-    pub(crate) fn new(id: impl Into<String>, schema: &Schema) -> Scope {
+    pub(crate) fn new(id: impl Into<String>, schema: &Schema, config: Option<GenerateConfig>) -> Scope {
         let id = id.into();
         let serial_id = format!("{}__serial", id);
         let serial_root = NodeSerial(Gc::new(NodeSerial_ {
@@ -247,6 +250,7 @@ impl Scope {
             id: id.clone(),
             serial_root: serial_root,
             mut_: GcCell::new(ScopeMut_ {
+                generate_config: config,
                 escapable_parent: EscapableParent::None,
                 rust_root: None,
                 rust_extra_roots: vec![],
@@ -516,7 +520,7 @@ impl Scope {
     pub fn dynamic_array(&self, id: impl Into<String>, len: NodeInt) -> (NodeDynamicArray, Scope) {
         let id = id.into();
         let serial = self.seg(&id);
-        let scope = Scope::new(&format!("{}__scope", id), &self.0.schema);
+        let scope = Scope::new(&format!("{}__scope", id), &self.0.schema, None);
         let node = NodeDynamicArray(Gc::new(NodeDynamicArray_ {
             scope: self.clone(),
             id: id.clone(),
@@ -660,7 +664,7 @@ impl Scope {
     }
 
     /// Treat a dynamic-length byte sequence as a UTF-8 string (`String` in Rust).
-    pub fn string_utf8(&self, id: impl Into<String>, serial: impl IntoByteVec) -> NodeCustom {
+    pub fn string_utf8(&self, id: impl Into<String>, serial: impl BecomesByteVec) -> NodeCustom {
         let id = id.into();
         let err = format!("Error parsing utf8 string in node {}", id);
         return self.custom(

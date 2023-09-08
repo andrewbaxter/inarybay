@@ -65,8 +65,11 @@ impl Schema_ { }
 #[derive(Clone, Trace, Finalize)]
 pub struct Schema(pub(crate) Gc<GcCell<Schema_>>);
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct GenerateConfig {
+    /// Prefix the methods with this string (and an underscore) to make method names
+    /// from conflicting.
+    pub prefix: Option<String>,
     /// Generate read methods (async or otherwise)
     pub read: bool,
     /// Generate write methods (async or otherwise)
@@ -77,7 +80,7 @@ pub struct GenerateConfig {
     pub async_: bool,
     /// If true, errors are a single pointer with no allocations. (This may be used for
     /// other memory optimizations in the future.)
-    pub low_heap: bool,
+    pub simple_errors: bool,
 }
 
 pub(crate) struct GenerateContext {
@@ -140,9 +143,10 @@ impl Schema {
     /// See `Scope` for more details. Scopes created directly in the Schema will have
     /// (de)serialization methods generated. The method names will be prefixed with
     /// `prefix + "_"` if `prefix` is non-empty.
-    pub fn scope(&self, id: impl Into<String>, prefix: impl Into<String>) -> Scope {
-        let out = Scope::new(id, self);
-        match self.0.borrow_mut().top_scopes.entry(prefix.into()) {
+    pub fn scope(&self, id: impl Into<String>, config: GenerateConfig) -> Scope {
+        let prefix = config.prefix.as_ref().cloned().unwrap_or_else(String::new);
+        let out = Scope::new(id, self, Some(config));
+        match self.0.borrow_mut().top_scopes.entry(prefix) {
             Entry::Vacant(e) => {
                 e.insert(out.clone());
             },
@@ -154,27 +158,13 @@ impl Schema {
     }
 
     /// Generate code for the schema.
-    pub fn generate(&self, config: GenerateConfig) -> String {
+    pub fn generate(&self) -> String {
         let self2 = self.0.borrow();
 
         // Generate types
         let mut code = vec![quote!{
             #![allow(warnings, unused)]
         }];
-        match config.low_heap {
-            true => {
-                code.push(quote!{
-                    use inarybay_runtime::lowheap_error::ReadErrCtx;
-                    use inarybay_runtime::lowheap_error::ReadErrCtxIo;
-                });
-            },
-            false => {
-                code.push(quote!{
-                    use inarybay_runtime::error::ReadErrCtx;
-                    use inarybay_runtime::error::ReadErrCtxIo;
-                });
-            },
-        }
         code.extend(self.0.borrow().imports.values().cloned());
         for mod_ in &self.0.borrow().mods {
             code.push(quote!(pub mod #mod_;));
@@ -317,10 +307,25 @@ impl Schema {
             let rust_ident = rust.id_ident();
             let rust_type_ident = rust.rust_type();
             let serial_ident = &scope.0.serial_root.0.id_ident;
+            let config = scope.0.mut_.borrow().generate_config.as_ref().unwrap().clone();
             if config.read {
+                let errors = match config.simple_errors {
+                    true => {
+                        quote!{
+                            use inarybay_runtime::lowheap_error::ReadErrCtx;
+                            use inarybay_runtime::lowheap_error::ReadErrCtxIo;
+                        }
+                    },
+                    false => {
+                        quote!{
+                            use inarybay_runtime::error::ReadErrCtx;
+                            use inarybay_runtime::error::ReadErrCtxIo;
+                        }
+                    },
+                };
                 if config.sync_ {
                     let gen_ctx = GenerateContext {
-                        low_heap: config.low_heap,
+                        low_heap: config.simple_errors,
                         async_: false,
                     };
                     let reader = match &self.0.borrow().reader_bounds {
@@ -333,6 +338,8 @@ impl Schema {
                     code.push(quote!{
                         pub fn #method_ident < R: #reader >(#serial_ident:& mut R) -> Result < #rust_type_ident,
                         #err_ident > {
+                            #errors 
+                            //. .
                             let mut #offset_ident = 0usize;
                             #method_code 
                             //. .
@@ -342,7 +349,7 @@ impl Schema {
                 }
                 if config.async_ {
                     let gen_ctx = GenerateContext {
-                        low_heap: config.low_heap,
+                        low_heap: config.simple_errors,
                         async_: true,
                     };
                     let reader = match &self.0.borrow().reader_bounds {
@@ -357,6 +364,8 @@ impl Schema {
                             #serial_ident:& mut R
                         ) -> Result < #rust_type_ident,
                         #err_ident > {
+                            #errors 
+                            //. .
                             let mut #offset_ident = 0usize;
                             #method_code 
                             //. .
@@ -368,15 +377,15 @@ impl Schema {
             if config.write {
                 if config.sync_ {
                     let gen_ctx = GenerateContext {
-                        low_heap: config.low_heap,
+                        low_heap: config.simple_errors,
                         async_: false,
                     };
                     let method_ident = format_ident!("{}write", prefix);
                     let method_code = generate_write(&gen_ctx, scope);
                     code.push(quote!{
                         pub fn #method_ident < W: std:: io:: Write >(
+                            #serial_ident:& mut W,
                             #rust_ident: #rust_type_ident,
-                            #serial_ident:& mut W
                         ) -> std:: io:: Result <() > {
                             use std::io::Write;
                             let mut #offset_ident = 0usize;
@@ -389,15 +398,15 @@ impl Schema {
                 }
                 if config.async_ {
                     let gen_ctx = GenerateContext {
-                        low_heap: config.low_heap,
+                        low_heap: config.simple_errors,
                         async_: true,
                     };
                     let method_ident = format_ident!("{}write_async", prefix);
                     let method_code = generate_write(&gen_ctx, scope);
                     code.push(quote!{
                         pub async fn #method_ident < W: inarybay_runtime:: async_:: AsyncWriteExt + std:: marker:: Unpin >(
+                            #serial_ident:& mut W,
                             #rust_ident: #rust_type_ident,
-                            #serial_ident:& mut W
                         ) -> std:: io:: Result <() > {
                             use inarybay_runtime::async_::AsyncWriteExt;
                             let mut #offset_ident = 0usize;
