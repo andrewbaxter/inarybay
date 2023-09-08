@@ -2,6 +2,10 @@
 name = "inarybay"
 version = "0.1.0"
 edition = "2021"
+license = "ISC"
+description = "Graph-based binary format (de)serializer generator"
+repository = "https://github.com/andrewbaxter/inarybay"
+readme = "readme.md"
 
 [dependencies]
 enum_dispatch = "0.3.12"
