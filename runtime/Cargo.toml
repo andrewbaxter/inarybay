@@ -2,6 +2,10 @@
 name = "inarybay-runtime"
 version = "0.1.0"
 edition = "2021"
+license = "ISC"
+description = "Graph-based binary format (de)serializer generator (runtime)"
+repository = "https://github.com/andrewbaxter/inarybay"
+readme = "../readme.md"
 
 [dependencies]
 futures = { version = "*", optional = true }
