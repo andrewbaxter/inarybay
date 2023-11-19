@@ -8,7 +8,7 @@ repository = "https://github.com/andrewbaxter/inarybay"
 readme = "../readme.md"
 
 [dependencies]
-futures = { version = "*", optional = true }
+futures = { version = "0.3.28", optional = true }
 
 [features]
 default = []
